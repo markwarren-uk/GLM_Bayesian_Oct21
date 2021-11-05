@@ -1,0 +1,1653 @@
+# Bayesian Poisson GLM {#pois-glm}
+
+The Bayesian General Linear Model presented in Chapter 4 assumes that the response variable approximately follows a normal distribution at each level of the covariate values. Generalised linear models are a larger class of models that represent an extension of the general linear model that allows the specification of models with response variables that follow non-Gaussian distributions.
+
+Generalised Linear Models offer the opportunity to model a much greater range of data and remove the need to transform our data to fit a normal distribution. Unfortunately the terminology around these models is confusing. The abbreviation GLM usually refers to General Linear Models; i.e. linear regression models for a continuous response variable with continuous and/or categorical covariates. Generalised Linear Models are sometimes abbreviated as GLIM and occasionally GLZM though, confusingly, it is more typical to abbreviate them just as GLM. 
+
+We use ‘GLM’ for both General and Generalised Linear Models, but always with a qualifying prefix. So, General Linear Models are referred to as Gaussian GLMs, while for Generalised Linear Models we specify the distribution used, such as Poisson GLM, gamma GLM, binomial GLM, etc. 
+
+In this chapter we present the first in a series of Bayesian Generalised Linear Models, starting with a Poisson GLM. A Poisson GLM is appropriate for data in which the dependent variable comprises count data. Data must not take values below zero and the variance is assumed to equal the mean.
+
+
+## Stickleback lateral plate number {#ga-plate}
+
+In this Chapter we fit a Poisson GLM to data on lateral plate number of three-spined sticklebacks (_Gasterosteus aculeatus_) from the island of North Uist in the Scottish Hebrides. Unlike most bony fishes, three-spined sticklebacks lack scales and instead possess a row of bony lateral plates along their body which, along with bony dorsal spines and pelvic girdle and pelvic spines represents ‘armour’ that serves to protect them from predatory birds and fish. Three-spined sticklebacks show variation in the development of their bony armour and have been the focus of numerous ecological and evolutionary studies. On North Uist, populations of three-spined sticklebacks exhibit extreme variation in the development of the lateral plates, spines and pelvis, including the complete loss of these skeletal structures. 
+
+Here we analyse data on lateral plate numbers for sticklebacks from 57 populations from North Uist, along with a range of ecological variables for each population, to understand what ecological processes drive variation in armour evolution.
+
+*__Import data__*
+
+```{r ch5-libraries, echo=FALSE, warning=FALSE, message=FALSE}
+#Load packages
+library(lattice)  
+library(ggplot2)
+library(GGally)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(car)
+library(devtools)
+library(ggpubr)
+library(qqplotr)
+library(geiger)
+library(INLA)
+library(brinla)
+library(gridExtra)
+library(rlang)
+library(kableExtra)
+```
+
+Data for North Uist three-spined sticklebacks are saved in a comma-separated values (CSV) file `stickleback.csv` and are imported  into a dataframe in R using the command:
+
+`ga <- read_csv(file = "stickleback.csv")`
+
+```{r ch5-csv-ga, echo=FALSE, warning=FALSE, message=FALSE}
+ga <- read_csv(file = "stickleback.csv")
+```
+
+Assess the size of the dataframe and the variables it comprises:
+`str(ga)`
+
+```{r ch5-str-ga, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(ga, vec.len=2)
+```
+
+The dataframe comprises `r nrow(ga)` observations of `r ncol(ga)` variables. Each row in the dataframe represents a separate North Uist freshwater lake or _loch_ (`loch`). There are four continuous ecological variables: `dist` is the horizontal distance from each loch to the nearest marine habitat (in km), `alt` is the altitude of the loch above sea level (in m), `area` is the surface area of the loch (in km^2^), and `pH` is loch water pH. There are also three categorical ecological variables, scored as either 'yes' or 'no': `comp` is the presence in a loch of nine-spined sticklebacks (_Pungitius pungitius_), which are competitors of three-spined sticklebacks, `inve` is the presence of invertebrate predators of three-spined sticklebacks (primarily dragonfly and beetle larvae), and `vert` is the presence of vertebrate predators of three-spined sticklebacks (brown trout, _Salmo trutta_). Two further variables are `sl`, which is the mean body length of three-spined sticklebacks from a sample of 30 fish from each loch, and `plate` is the median plate number of the same 30 fish.
+
+## Steps in fitting a Bayesian GLM {#pois-glm-steps}
+
+We will follow the 9 steps to fitting a Bayesian GLM, detailed in Chapter 2.
+
+_1. State the question_
+
+_2. Perform data exploration_
+
+_3. Select a statistical model_
+
+_4. Specify and justify a prior distribution on parameters_
+
+_5. Fit the model_
+
+_6. Obtain the posterior distribution_
+
+_7. Conduct model checks_
+
+_8. Interpret and present model output_
+
+_9. Visualise the results_
+
+### State the question {#ga-question}
+
+This study was conducted to understand variation in lateral plate number of three-spined sticklebacks among freshwater lochs on North Uist. The topic of lateral plate evolution has been the subject of many studies over several decades, and so there are multiple hypotheses that we might investigate with these data; indeed all the ecological variables measured have previously been invoked as predictors of lateral plate evolution in three-spined sticklebacks. 
+
+This multiplicity of existing research presents us with the opportunity to compare among previous hypotheses and examine which is best supported by our data. This approach to hypothesis testing is termed an ‘information theory (IT) approach’ and is fundamentally Bayesian, since we take prior information and update it with new data to draw the most parsimonious conclusion.
+
+We start by formulating a set of biologically plausible alternative models comprising variables proposed as environmental agents of selection on lateral plate number in previous studies (Table 5.1).
+
+Table 5.1: **_A priori_ models for the evolution of lateral plates of three-spined sticklebacks (_Gasterosteus aculeatus_) in freshwater lochs on North Uist, Scotland.**
+
+|Model|Formulation    |Source           |
+|:----|:--------------|:----------------|
+|M01  |`vert`         |@Morris_1956     |
+|M02  |`ph`           |@Giles_1983      |
+|M03  |`inve`         |Reimchen (1994)  |
+|M04  |`alt` + `dist` |@RAEYMAEKERS_2006|
+|M05  |`alt` + `area` |@Lucek_2016      |
+|M06  |`comp`         |@MacColl_2012    |
+|M07  |`vert` + `ph`  |@Spence_2013     |
+|M08  |`vert` + `comp`|@Magalhaes_2016  |
+|M09  |`ph` + `sl`    |@Smith_2020      |
+
+### Data exploration {#ga-eda}
+
+We start by conducting a data exploration to identify any potential problems with the data. First check for missing data.
+
+`colSums(is.na(ga))`
+
+```{r ch5-nas, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+colSums(is.na(ga))
+```
+
+There are no missing data.
+
+#### Outliers {#ga-outliers}
+
+Outliers in the data can identified visually, R code for a plot of outliers is available in the R script associated with this chapter:
+
+(ref:ch5-dotplot) **Dotplots of loch pH (`ph`), mean standard length (`sl`), lateral plate number (`plate`),  distance to the marine environment (`dist`), altitude (`alt`) and surface area (`area`) of three-spined stickleback populations on North Uist. Data are arranged by the order they appear in the dataframe.**
+
+```{r ch5-dotplot, fig.cap='(ref:ch5-dotplot)', fig.dim = c(6, 4), fig.align='center', cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+#Add row numbers
+ga <- ga %>%
+  mutate(order = seq(1:nrow(ga)))
+
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                          color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+#Write a function
+multi_dotplot <- function(filename, Xvar, Yvar){
+  filename %>% 
+    ggplot(aes(x = {{Xvar}})) +
+    #Note the double curly brackets from rlang package - it allows us to pass unquoted col names
+    geom_point(aes(y = {{Yvar}})) +
+    theme_bw() +
+    My_theme +
+    coord_flip() +
+    labs(x = "Order of Data")
+  
+}
+
+#CHOOSE THE VARIABLE FOR EACH PLOT AND APPLY FUNCTION
+
+p1 <- multi_dotplot(ga, order, dist) 
+p2 <- multi_dotplot(ga, order, alt) 
+p3 <- multi_dotplot(ga, order, area) 
+p4 <- multi_dotplot(ga, order, ph) 
+p5 <- multi_dotplot(ga, order, sl) 
+p6 <- multi_dotplot(ga, order, plate) 
+
+#CREATE GRID
+grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2)
+```
+
+There are no obvious outliers in Fig. \@ref(fig:ch5-dotplot). However, the distribution of data for loch areas is clumped, indicating a large number of small lochs and a few much larger lochs. To improve the distribution of these data we can conduct a transformation of the covariate. While transformation of the response variable is to be avoided, transformation of covariates can serve to facilitate model fitting. Here we apply a log10 transformation:
+
+`ga$log_area <- log10((ga$area))`
+`r ga$log_area <- log10((ga$area))`
+
+The improvement in the distribution of the data after transformation is clear from Fig. \@ref(fig:ch5-logarea).
+
+(ref:ch5-logarea) **Dotplots of loch surface area (area) and log10 surface area (log_area) on North Uist. Data are arranged by the order they appear in the dataframe.**
+
+```{r ch5-logarea, fig.cap='(ref:ch5-logarea)', fig.dim = c(5, 3), fig.align='center', cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+p7 <- multi_dotplot(ga, order, log_area)
+
+grid.arrange(p3, p7, nrow = 1)
+```
+
+#### Distribution of the dependent variable {#pois-dist}
+
+The distribution of the dependent variable will inform selection of the appropriate statistical model to use. Here we visualise stickleback lateral plate number by dividing the x-axis into 'bins' and counting the number of observations in each bin as a frequency polygon using the `geom_freqpoly()` function from the `ggplot2` package:
+
+`ga %>% ggplot(aes(plate)) + geom_freqpoly( bins = 9) + labs(x = "Number of lateral plates", y = "Frequency") + theme_classic() +  theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))`
+
+(ref:ch5-freqpoly) **Frequency polygon of mean lateral plate number of three-spined sticklebacks from 57 North Uist lochs.**
+
+```{r ch5-freqpoly, fig.cap='(ref:ch5-freqpoly)', fig.dim = c(6, 4), fig.align='center', cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+ga %>% 
+  ggplot(aes(plate)) +
+  geom_freqpoly( bins = 9) +
+  labs(x = "Number of lateral plates", y = "Frequency") +
+  My_theme +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+```
+
+The frequency polygon plot of the dependent variable (Fig. \@ref(fig:ch5-freqpoly)) shows a distribution with a pronounced positive skew. 
+
+#### Balance of categorical variables {#pois-balance}
+
+The balance of the three categorical ecological variables; `comp` (the presence in a loch of nine-spined sticklebacks, which are competitors of three-spined sticklebacks), `inve` (the presence of invertebrate predators), and `vert` (the presence of vertebrate predators), can be checked using the `table` function
+
+Competitors present in loch?
+
+`table(ga$comp)`
+
+```{r ch5-tab-comp, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+table(ga$comp)
+```
+
+Invertebrate predators present in loch?
+
+`table(ga$inve)`
+
+```{r ch5-tab-inve, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+table(ga$inve)
+```
+
+Vertebrate predators present in loch?
+
+`table(ga$vert)`
+
+```{r ch5-tab-vert, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+table(ga$vert)
+```
+
+Balance is not perfect, though for `comp` and `inve` it is acceptable. For `vert` it is more problematic should we attempt to include this variable in a complex model with multiple other variables, and especially as an interaction.
+
+#### Multicollinearity among covariates {#pois-collin}
+
+If covariates in a model are correlated, then the model may produce unstable parameter estimates with inflated standard errors and it is important to carefully check relationships among covariates.
+
+A comprehensive summary of the relationships among model covariates can be obtained using the `ggpairs` function from the `GGally` library:
+
+(ref:ch5-ggpairs) **Plot matrix of covariates showing frequency plots, boxplots, frequency histograms, scatterplots, frequency polygons, and pairwise correlations.**
+
+`ga %>% ggpairs(columns = c("dist", "alt", "log_area", "ph", "comp", "inve", "vert", "sl"), aes(alpha = 0.8), lower = list(continuous = "smooth_loess"))`
+
+```{r ch5-ggpairs, fig.cap='(ref:ch5-ggpairs)', fig.dim = c(7, 5), fig.align='center', cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+ga %>% ggpairs(columns = c("dist", "alt", "log_area", "ph", "comp", "inve", "vert", "sl"), aes(alpha = 0.8), lower = list(continuous = "smooth_loess", combo = wrap("facethist", binwidth = 5))) + My_theme
+```
+
+The plot matrix in Fig. \@ref(fig:ch5-ggpairs) demonstrates collinearity between loch pH (`ph`) and mean fish standard length (`sl`). Since these variables will appear together in model M09 (Table 5.1) we need to explore this relationship further. 
+
+The variance inflation factor (VIF) provides an estimate of the proportion of variance in one predictor explained by the other predictors in a model. A VIF of 1 indicates no collinearity. VIF values above 1 indicate increasing degrees of collinearity. VIF values exceeding 3 are considered problematic (Zuur et al. 2010). The VIF can be estimated using the `vif` function from the `car` package:
+
+`round(vif(glm(plate ~ ph + sl, family = "poisson", data = ga)),2)`
+
+```{r ch5-vif, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+round(vif(glm(plate ~ ph + sl, family = "poisson", data = ga)),2)
+```
+
+The estimates of VIF are <3, so there is no serious problem with multicollinearity with these two variables.
+
+#### Zeros in the response variable {#pois-zeros}
+
+The number of zeros in the response variable needs to be considered and will inform selection of the appropriate statistical model. The proportion of zeros in the response variable can be calculated with:
+
+`round((sum(ga$plate == 0) / nrow(ga))*100,0)`
+
+`r round((sum(ga$plate == 0) / nrow(ga))*100,0)`
+
+The response variable comprises 11% zeros. This proportion of zeros is not necessarily a problem, but is a consideration in deciding how to model the data.
+
+#### Relationships among dependent and independent variables {#pois-rels}
+
+Visual inspection of the data using plots is a critical step and will illustrate whether relationships are linear or non-linear and whether there are interactions between covariates. Start by plotting plate number (the response variable) against the continuous covariates, R code is available in the R script associated with this chapter:
+
+(ref:ch5-scatter) **Multipanel scatterplots of median three-spined stickleback lateral plate number against continuous covariates.**
+
+```{r ch5-scatter, fig.cap='(ref:ch5-scatter)', fig.dim = c(5, 4), fig.align='center', cache = TRUE, message = FALSE, echo = FALSE, warning = FALSE}
+
+My_theme <- theme(panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                          color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+grid.arrange(
+ga %>% 
+  ggplot() +
+  geom_point(aes(x = dist, y = plate), alpha = 0.5) +
+  geom_smooth(aes(x = dist, y = plate), method = 'lm', se=FALSE, colour = "black")+
+  labs(x = "Distance (km)", y = "Plate number") +
+  My_theme, 
+
+ga %>% 
+  ggplot() +
+  geom_point(aes(x = alt, y = plate), alpha = 0.5) +
+  geom_smooth(aes(x = alt, y = plate), method = 'lm', se=FALSE, colour = "black")+
+  labs(x = "Altitude (m)", y = "Plate number") +
+  My_theme,  
+
+ga %>% 
+  ggplot() +
+  geom_point(aes(x = ph, y = plate), alpha = 0.5) +
+  geom_smooth(aes(x = ph, y = plate), method = 'lm', se=FALSE, colour = "black")+
+  labs(x = "pH", y = "Plate number") +
+  My_theme,  
+
+ga %>% 
+  ggplot() +
+  geom_point(aes(x = sl, y = plate), alpha = 0.5) +
+  geom_smooth(aes(x = sl, y = plate), method = 'lm', se=FALSE, colour = "black")+
+  labs(x = "SL (mm)", y = "Plate number") +
+  My_theme, 
+nrow = 2)
+```
+
+The plots shown in Fig. \@ref(fig:ch5-scatter) suggest positive (`pH`, `SL`) and negative (`dist`, `alt`) relationships with plate number. This is not surprising, given that we are using an IT approach and fitting a series of models with variables previously proposed as predicting plate number (Table 5.1). The question we are addressing in this study is not whether these relationships exist, but instead which model (i.e. hypothesis) is best supported by the data.
+
+For categorical covariates the pattern is less pronounced (the code for this plot is available in the R script associated with this chapter):
+
+(ref:ch5-cat-vars) **Boxplots of median three-spined stickleback lateral plate number as a function of the presence/absence of a competitor species, invertebrate predators and vertebrate predators.**
+
+```{r ch5-cat-vars, fig.cap='(ref:ch5-cat-vars)', fig.align='center', fig.dim = c(5, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+label_inve <- c("no" = "No invertebrate predators", 
+                "yes" = "Invertebrate predators")
+label_vert <- c("no" = "No vertebrate predators", 
+                "yes" = "Vertebrate predators")
+ggplot() +
+geom_boxplot(data = ga, aes(y = plate, x = comp), fill = "gray88") +
+geom_jitter(data = ga, aes(y = plate, x = comp),
+                     size = 2, width = 0.05, height = 0.1) +
+xlab("Competitors present") + ylab("Plate number")+
+theme(text = element_text(size=12)) +
+theme(panel.background = element_blank())+
+theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) +
+  theme(strip.text = element_text(size = 10, face="italic")) +
+facet_grid(vert ~ inve, 
+                    scales = "fixed", space = "fixed", 
+                    labeller=labeller (vert = label_vert, 
+                                       inve = label_inve))
+```
+
+The plots shown in Fig. \@ref(fig:ch5-cat-vars) suggest variation in lateral plate number as a function of the presence of predators and competitors. Again, however, in the context of an IT approach, these patterns are expected and the question is which _a priori_ models are best supported by the data.
+
+#### Independence of response variable {#pois-indep}
+
+An assumption of a GLM is that each observation in a dataset is independent of all others. In the case of the present study each row of data represented a discrete freshwater loch supporting a different three-spined stickleback population. Ostensibly then, these data are independent. However, there is the potential for spatial dependency in these data. North Uist shows striking environmental spatial heterogeneity with the West coast of the island is characterised by a band of calcium-rich shell-sand grassland, termed the _machair_, while in the central and eastern regions the _machair_ gives way to blanket peat bogs with acidic lochs. A GLM does not permit spatial (or temporal) dependency to be adequately modelled and so, for the purposes of this analysis, while we will treat the data as independent, though this may not strictly be the case. 
+
+### Selection of a statistical model {#pois-select}
+
+The study was designed to compare alternative hypotheses for the evolution of lateral plate number in three-spined sticklebacks. The dependent variable comprises lateral plate counts that include zero, though negative values are not possible. The distribution of the response variable is positively skewed (Fig. \@ref(fig:ch5-freqpoly)). The data will treated as independent, though given the structure of the environment on North Uist, there may be spatial dependency in the data.
+
+Given these conditions, a Poisson is an appropriate distribution as a starting point to model the data, in combination with a log link function. The Poisson is a non-normal distribution that is effective for modelling strictly positive integer data (such as counts). It has a single parameter (lambda, $\lambda$), which is both the mean and variance of the response variable. Sometimes you might see mu ($\mu$) used to represent the mean. The variance in the Poisson distribution is proportional to the mean so that larger mean values have larger variation. In the context of an INLA model, a Poisson model has no hyperparameter. 
+
+The link function is used to link the response variable (counts of lateral plates) and the predictor function (covariates). In the case of a Poisson GLM the default is a log link function. The link function is needed to ensure model fitted values remain positive, while allowing zeros in the data. 
+
+### Specification of priors {#pois-prior-spec}
+
+An important decision for any Bayesian model is to resolve what priors to place on model parameters. Here we obtain informative priors using published data on three-spined stickleback lateral plate number from across the entire European range of the species.
+
+
+#### Existing data
+
+Data came from a large-scale study to investigate the morphological variability of three-spined sticklebacks in Europe, with samples collected from 85 locations in England, Estonia, France, Norway, Poland, Turkey and Scotland including samples from North Uist. Results of the study were published in @Smith_2020.
+
+#### Priors on the fixed effects {#pois-priors-fixed}
+
+Priors were obtained by fitting the nine models in Table 5.1 using frequentist Poisson GLMs to the data from Smith et al. (2020) (analysis not shown). 
+
+Non-informative (default) priors for all models were _N_(mean = 0, $\sigma^2$ = 0) ($\tau$ = 0) on model intercepts ($\beta1$) and N(0, 1000) ($\tau$ = 0. 001) on all other model parameters ($\beta2$ and $\beta3$).
+
+Informative priors for parameters for each model are summarised in Table 5.2.
+
+Table 5.2: **Informative priors on fixed effects of _a priori_ models for the evolution of lateral plates of three-spined sticklebacks on North Uist, showing model number, formulation, and mean, variance and precision for betas.**
+
+|Model|Formulation|$\beta1$       |$\beta2$       |$\beta3$       |
+|:----|:----------|:-------------:|:-------------:|:-------------:|
+|M01  |vert       |_N_(2.1,0.25)  |_N_(1.4,0.36)  |-              |
+|     |           |($\tau$ = 4.0) |($\tau$ = 2.8) |-              |
+|M02  |ph         |_N_(-3.3,0.64) |_N_(0.7,0.04)  |-              |
+|     |           |($\tau$ = 1.6) |($\tau$ = 25)  |-              |
+|M03  |inve       |_N_(1.1,0.09)  |_N_(0.4,0.09)  |-              |
+|     |           |($\tau$ = 11.1)|($\tau$ = 11.1)|-              |
+|M04  |alt + dist |_N_(2.5,0.09)  |_N_(-0.01,0.01)|_N_(-0.1,0.01) |
+|     |           |($\tau$ = 11.1)|($\tau$ = 100) |($\tau$ = 100) |
+|M05  |alt + area |_N_(2.9,0.49)  |_N_(-0.01,0.01)|_N_(-0.02,0.01)|
+|     |           |($\tau$ = 2.0) |($\tau$ = 100) |($\tau$ = 100) |
+|M06  |comp       |_N_(1.6,0.09)  |_N_(0.5,0.09)  |-              |
+|     |           |($\tau$ = 11.1)|($\tau$ = 11.1)|-              |
+|M07  |vert + ph  |_N_(-4.8,3.61) |_N_(0.6,0.25)  |_N_(0.6,0.04)  |
+|     |           | ($\tau$ = 0.3)|($\tau$ = 4.0) |($\tau$ = 25)  |
+|M08  |vert + comp|_N_(1.7,0.16)  |_N_(0.7,0.09)  |_N_(0.9,0.09)  |
+|     |           |($\tau$ = 6.3) |($\tau$ = 11.1)|($\tau$ = 11.1)|
+|M09  |ph + sl    |_N_(-3.4,0.36) |_N_(0.5,0.04)  |_N_(0.1,0.0025)|
+|     |           |($\tau$ = 2.8) |($\tau$ = 25.0)|($\tau$ = 400) |
+
+### Fit the models {#pois-fit-models}
+
+We will fit Bayesian Poisson GLMs using INLA to all the _a priori_ models in Table 5.1, first with default priors (`M01-M09`), and second with informative priors on the fixed effects (`I01-I09`).
+
+We start by specifying the model formulae:
+
+`f01 <- plate ~ vert`
+
+`f02 <- plate ~ ph `
+
+`f03 <- plate ~ inve`
+
+`f04 <- plate ~ alt + dist`
+
+`f05 <- plate ~ alt + log_area`
+
+`f06 <- plate ~ comp`
+
+`f07 <- plate ~ vert + ph `
+
+`f08 <- plate ~ vert + comp`
+
+`f09 <- plate ~ ph + sl`
+
+Then run the default models `M01-M09`, specifying `control.compute = list(dic = TRUE)` to enable model comparison:
+
+`M01 <- inla(f01, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+            
+`M02 <- inla(f02, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M03 <- inla(f03, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M04 <- inla(f04, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M05 <- inla(f05, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M06 <- inla(f06, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M07 <- inla(f07, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M08 <- inla(f08, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+`M09 <- inla(f09, control.compute = list(dic = TRUE), family = "poisson", data = ga)`
+
+```{r ch5-fit-models, cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+f01 <- plate ~ vert
+f02 <- plate ~ ph 
+f03 <- plate ~ inve
+f04 <- plate ~ alt + dist 
+f05 <- plate ~ alt + log_area 
+f06 <- plate ~ comp 
+f07 <- plate ~ vert + ph 
+f08 <- plate ~ vert + comp
+f09 <- plate ~ ph + sl 
+
+# Models M01-10 with default priors
+M01 <- inla(f01, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M02 <- inla(f02, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M03 <- inla(f03, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M04 <- inla(f04, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M05 <- inla(f05, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M06 <- inla(f06, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M07 <- inla(f07, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M08 <- inla(f08, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+M09 <- inla(f09, control.compute = list(dic = TRUE), 
+            family = "poisson", data = ga)
+```
+
+We can compare model fit in a Bayesian framework using the Deviance Information Criterion (DIC). Like AIC, a smaller DIC score indicates a better fit of the model to the data given its complexity.
+
+First extract the default DICs:
+
+`DefDIC <- c(M01$dic$dic,M02$dic$dic,M03$dic$dic,M04$dic$dic, M05$dic$dic,M06$dic$dic,M07$dic$dic, M08$dic$dic,M09$dic$dic)`
+
+`r DefDIC <- c(M01$dic$dic,M02$dic$dic,M03$dic$dic, M04$dic$dic,M05$dic$dic,M06$dic$dic,            M07$dic$dic,M08$dic$dic,M09$dic$dic)`
+
+Add weighting and names to the DIC scores and tabulate the model DICs based on order of fit:
+
+`DefDIC.weights <- aicw(DefDIC)`
+
+`DefDIC.weights %>% mutate(model = c("M01","M02","M03", "M04","M05","M06", "M07","M08","M09")) %>% select(model, everything()) %>% arrange(fit) %>% mutate(across(2:4, round, 2))`
+
+
+```{r ch5-dics, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+DefDIC.weights <- aicw(DefDIC)
+DefDIC.weights %>% mutate(model = c("M01","M02","M03", "M04","M05","M06", "M07","M08","M09")) %>% select(model, everything()) %>% arrange(fit) %>% mutate(across(2:4, round, 2))
+```
+
+We can summarise this output for presentation:
+
+Table 5.3: **Non-informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta is the difference in DIC scores, omega is DIC weighting.**
+
+|Model|DIC  |$\Delta$_i_|$\omega$|
+|:----|:---:|:---------:|:------:|
+|M09  |191.0|0.0        |0.79    |
+|M02  |194.3|3.3        |0.15    |
+|M07  |196.0|5.0        |0.06    |
+|M04  |219.8|28.2       |0.00    |
+|M05  |224.5|33.5       |0.00    |
+|M08  |232.0|41.0       |0.00    |
+|M01  |236.5|45.5       |0.00    |
+|M06  |243.7|52.7       |0.00    |
+|M03  |246.5|55.6       |0.00    |
+
+Table 5.3 summarises the relative performance of the non-informative _a priori_ models, ranked by DIC score. $\Delta_i$ is the difference in DIC scores between the best fitting and alternative candidate models. Model weight (omega, $\omega$) can be interpreted as the probability that a given model is the best model (based on DIC), given the data and the set of alternative models. In this case model `M09` is by far the most probable. Note that this result does not preclude the possibility that another, untested, _a priori_ model could not provide a better fit to the data.
+
+We now run models `I01-I09` using the informative priors summarised in Table 5.2 (the coding is available in the R script associated with this chapter), which gives us:
+
+```{r ch5-infdic-table, cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+I01 <- inla(f01, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 2.1,
+                                 prec.intercept = 0.5^(-2),
+                            mean = list(vertyes = 1.4), 
+                            prec = list(vertyes = 0.6^(-2))))
+
+I02 <- inla(f02, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = -3.3,
+                                 prec.intercept = 0.8^(-2),
+                                 mean = list(ph = 0.7), 
+                                 prec = list(ph = 0.2^(-2))))
+
+I03 <- inla(f03, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 1.1,
+                                 prec.intercept = 0.3^(-2),
+                            mean = list(inveyes = 0.4),
+                            prec = list(inveyes = 0.3^(-2))))
+
+I04 <- inla(f04, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 2.5,
+                                 prec.intercept = 0.3^(-2),
+                                mean = list(alt = -0.01,
+                                           dist = -0.1),
+                                prec = list(alt = 0.1^(-2),
+                                           dist = 0.1^(-2))))
+
+I05 <- inla(f05, family = "poisson", data = ga,
+            control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 2.9,
+                                 prec.intercept = 0.7^(-2),
+                                mean = list(alt = -0.01,
+                                       log_area = -0.02),
+                                prec = list(alt = 0.1^(-2),
+                                       log_area = 0.1^(-2))))
+
+I06 <- inla(f06, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 1.6,
+                                 prec.intercept = 0.3^(-2),
+                            mean = list(compyes = 0.5),
+                            prec = list(compyes = 0.3^(-2))))
+
+I07 <- inla(f07, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = -4.8,
+                                 prec.intercept = 1.9^(-2),
+                            mean = list(vertyes = 0.6,
+                                             ph = 0.6),
+                            prec = list(vertyes = 0.5^(-2),
+                                             ph = 0.2^(-2))))
+
+I08 <- inla(f08, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 1.7,
+                                 prec.intercept = 0.4^(-2),
+                            mean = list(vertyes = 0.7,
+                                        compyes = 0.9),
+                            prec = list(vertyes = 0.3^(-2),
+                                        compyes = 0.3^(-2))))
+
+I09 <- inla(f09, family = "poisson", data = ga,
+          control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = -3.4,
+                                 prec.intercept = 0.6^(-2),
+                                 mean = list(ph = 0.5,
+                                             sl = 0.1),
+                                 prec = list(ph = 0.2^(-2),
+                                             sl = 0.05^(-2))))
+
+# Extract DICs
+InfDIC <- c(I01$dic$dic, I02$dic$dic, I03$dic$dic, 
+            I04$dic$dic, I05$dic$dic, I06$dic$dic,
+            I07$dic$dic, I08$dic$dic, I09$dic$dic)
+
+InfDIC.weights <- aicw(InfDIC)
+InfDIC.weights %>% mutate(model = c("I01","I02","I03","I04","I05","I06","I07","I08","I09")) %>% select(model, everything()) %>% arrange(fit) %>% mutate(across(2:4, round, 2))
+
+# Add weighting
+# InfDIC.weights <- aicw(InfDIC)
+
+# Add names
+# rownames(InfDIC.weights) <- c("I01","I02","I03",
+#                               "I04","I05","I06",
+#                               "I07","I08","I09")
+# Print DICs
+# dprint.inf <- print (InfDIC.weights,
+#                      abbrev.names = FALSE)
+
+# Order DICs by fit
+# round(dprint.inf[order(dprint.inf$fit),],2)
+
+``` 
+
+Which we can summarise more neatly:
+
+Table 5.4: **Informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta is the difference in DIC scores, omega is DIC weighting.**
+
+|Model|DIC  |$\Delta$_i_|$\omega$|
+|:----|:---:|:---------:|:------:|
+|I09  |189.4|0.0        |0.84    |
+|I02  |193.3|3.9        |0.12    |
+|I07  |195.4|6.0        |0.04    |
+|I04  |219.5|30.1       |0.00    |
+|I05  |223.4|34.0       |0.00    |
+|I08  |234.3|44.9       |0.00    |
+|I01  |236.6|47.2       |0.00    |
+|I06  |243.5|54.1       |0.00    |
+|I03  |246.0|56.6       |0.00    |
+
+The rank order of informative models (Table 5.3) is identical to that for non-informative models (Table 5.4), though DIC scores and model weights ($\omega$) vary somewhat. Model `I09` is again the most probable given the data and the set of candidate models.
+
+Compare the best-fitting models with non-informative and informative priors:
+
+`ComDIC <- c(M09$dic$dic, I09$dic$dic)`
+
+`DIC <- cbind(ComDIC)`
+
+`rownames(DIC) <- c("default priors","informative priors")`
+
+`round(DIC,0)`
+
+```{r ch5-comdic, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+ComDIC <- c(M09$dic$dic, I09$dic$dic)
+DIC <- cbind(ComDIC)
+rownames(DIC) <- c("default priors","informative priors")
+round(DIC,0)
+```
+
+These DIC scores are essentially the same.
+
+### Obtain the posterior distribution
+
+#### Model with default priors {#pois-def-priors}
+
+Output for the fixed effects of  M09 can be obtained with:
+
+`M09Betas <- M09$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]`
+                                 
+`round(M09Betas, digits = 3)`
+
+```{r ch5-def-post, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+M09Betas <- M09$summary.fixed[,c("mean", "sd", 
+                                 "0.025quant", 
+                                 "0.975quant")] 
+round(M09Betas, digits = 3)
+```
+
+This output reports the posterior mean, standard deviation and 95% credible intervals for the intercept and covariates (`ph`, `sl`).
+
+For the variable `ph` we have a posterior mean of 0.49 and lower 95% credible interval of 0.24 and upper 95% credible interval of 0.74. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for `ph` falls between these credible intervals; `ph` is statistically important in the model.
+
+Similarly, we can conclude that for the relationship between stickleback standard length (`sl`) and lateral plate number the credible intervals range from 0.01 to 0.10, indicating that this model parameter differs from zero.
+
+The model intercept, with credible intervals between -5.31 and -2.72, differs from zero with a posterior mean of -4.01 and standard deviation of 0.66.
+
+The posterior distribution of the fixed effects can be visualized using `ggplot2.` The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch5-M9-betas) **Posterior and prior distributions for fixed parameters of a Bayesian linear regression to model lateral plate number of three-spined sticklebacks (_Gasterosteus aculeatus_) on North Uist. The model is fitted with default (non-informative) priors. Distributions for: A. model intercept; B. slope for pH; C. slope for standard length. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is considered statistically important.**
+
+```{r ch5-M9-betas, fig.cap='(ref:ch5-M9-betas)', fig.align='center', fig.dim = c(6, 5), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.M09 <- as.data.frame(M09$marginals.fixed$`(Intercept)`)
+PriorBeta1.M09     <- data.frame(x = PosteriorBeta1.M09[,"x"], 
+                           y = dnorm(PosteriorBeta1.M09[,"x"],0,0))
+Beta1mean.M09 <- M09Betas["(Intercept)", "mean"]
+Beta1lo.M09   <- M09Betas["(Intercept)", "0.025quant"]
+Beta1up.M09   <- M09Betas["(Intercept)", "0.975quant"]
+
+beta1 <- ggplot() +
+annotate("rect", xmin = Beta1lo.M09, xmax = Beta1up.M09,
+                  ymin = 0, ymax = 0.62, fill = "gray88") +
+geom_line(data = PosteriorBeta1.M09,
+                  aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta1.M09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Intercept") +
+ylab("Density") +
+xlim(-8,1) + ylim(0,0.62) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta1mean.M09, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                     colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# ph (Beta2)
+PosteriorBeta2.M09 <- as.data.frame(M09$marginals.fixed$`ph`)
+PriorBeta2.M09 <- data.frame(x = PosteriorBeta2.M09[,"x"], 
+                       y = dnorm(PosteriorBeta2.M09[,"x"],0,31.6))
+Beta2mean.M09 <- M09Betas["ph", "mean"]
+Beta2lo.M09   <- M09Betas["ph", "0.025quant"]
+Beta2up.M09   <- M09Betas["ph", "0.975quant"]
+
+beta2 <- ggplot() +
+annotate("rect", xmin = Beta2lo.M09, xmax = Beta2up.M09,
+                  ymin = 0, ymax = 3.3, fill = "gray88") +
+geom_line(data = PosteriorBeta2.M09,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta2.M09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for pH") +
+ylab("Density") +
+xlim(-0.5,1.5) + ylim(0,3.3) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta2mean.M09, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# SL (Beta3)
+PosteriorBeta3.M09 <- as.data.frame(M09$marginals.fixed$`sl`)
+PriorBeta3.M09     <- data.frame(x = PosteriorBeta3.M09[,"x"],
+                           y = dnorm(PosteriorBeta3.M09[,"x"],0,31.6))
+
+Beta3mean.M09 <- M09Betas["sl", "mean"]
+Beta3lo.M09   <- M09Betas["sl", "0.025quant"]
+Beta3up.M09   <- M09Betas["sl", "0.975quant"]
+
+beta3 <- ggplot() +
+annotate("rect", xmin = Beta3lo.M09, xmax = Beta3up.M09,
+                  ymin = 0, ymax = 20, fill = "gray88") +
+geom_line(data = PosteriorBeta3.M09,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta3.M09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for SL") +
+ylab("Density") +
+xlim(-0.05,0.15) + ylim(0,20) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta3mean.M09, linetype = "dashed") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(beta1, beta2, beta3,
+                        labels = c("A", "B", "C"),
+                        ncol = 2, nrow = 2)
+
+```
+
+Figure \@ref(fig:ch5-M9-betas) provides a visual representation of the summary of the fixed effects, and indicates that for model `M09` the intercept and slope for pH and male standard length differ from zero and are statistically important. This figure also shows the non-informative priors, which appear flat across the range of possible values, thus making a limited contribution to the posterior distribution. 
+
+#### Model with informative priors {#pois-inf-priors}
+
+As for the default model, we will examine the posterior distributions for the model with informative priors, starting with the fixed effects.
+
+#### Fixed effects
+
+First examine the posterior mean and 95% credible intervals for the fixed effects:
+
+`I09Betas <- I09$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]`
+
+`round(I09Betas, digits = 2)`
+
+```{r ch5-inf-post, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+I09Betas <- I09$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]
+
+round(I09Betas, digits = 2)
+```
+
+Note that the qualitative outcome of model I09 is the same as the model with default priors (M09), but in the case of informative priors the posterior means differ quantitatively, as do the 95% credible intervals which encompass a narrower range in each case. 
+
+The posterior distributions of the fixed effects can be visualized using `ggplot2`. The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch5-I9-betas) **Posterior and prior distributions for fixed parameters of a Bayesian linear regression to model lateral plate number of three-spined sticklebacks (_Gasterosteus aculeatus_) on North Uist. The model is fitted with informative priors. Distributions for: A. model intercept; B. slope for pH; C. slope for standard length. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is considered statistically important.**
+
+
+```{r ch5-I9-betas, fig.cap ='(ref:ch5-I9-betas)', fig.align = 'center', fig.dim = c(6, 5), cache = TRUE,  message = FALSE, echo = FALSE, warning = FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.I09 <- as.data.frame(I09$marginals.fixed$`(Intercept)`)
+PriorBeta1.I09     <- data.frame(x = PosteriorBeta1.I09[,"x"], 
+                                 y = dnorm(PosteriorBeta1.I09[,"x"],-3.4,0.6))
+Beta1mean.I09 <- I09Betas["(Intercept)", "mean"]
+Beta1lo.I09   <- I09Betas["(Intercept)", "0.025quant"]
+Beta1up.I09   <- I09Betas["(Intercept)", "0.975quant"]
+
+Ibeta1 <- ggplot() +
+annotate("rect", xmin = Beta1lo.I09, xmax = Beta1up.I09,
+                  ymin = 0, ymax = 1, fill = "gray88") +
+geom_line(data = PosteriorBeta1.I09,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta1.I09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Intercept") +
+ylab("Density") +
+xlim(-8,1) + ylim(0,1) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta1mean.I09, linetype = "dashed") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# ph (Beta2)
+PosteriorBeta2.I09 <- as.data.frame(I09$marginals.fixed$`ph`)
+PriorBeta2.I09 <- data.frame(x = PosteriorBeta2.I09[,"x"], 
+                             y = dnorm(PosteriorBeta2.I09[,"x"],0.5,0.2))
+Beta2mean.I09 <- I09Betas["ph", "mean"]
+Beta2lo.I09   <- I09Betas["ph", "0.025quant"]
+Beta2up.I09   <- I09Betas["ph", "0.975quant"]
+
+Ibeta2 <- ggplot() +
+annotate("rect", xmin = Beta2lo.I09, xmax = Beta2up.I09,
+                  ymin = 0, ymax = 4.5, fill = "gray88") +
+geom_line(data = PosteriorBeta2.I09,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta2.I09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for pH") +
+ylab("Density") +
+xlim(-0.5,1.5) + ylim(0,4.5) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta2mean.I09, linetype = "dashed") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+
+# SL (Beta3)
+PosteriorBeta3.I09 <- as.data.frame(I09$marginals.fixed$`sl`)
+PriorBeta3.I09     <- data.frame(x = PosteriorBeta3.I09[,"x"],
+                                 y = dnorm(PosteriorBeta3.I09[,"x"],0.1,0.05))
+
+Beta3mean.I09 <- I09Betas["sl", "mean"]
+Beta3lo.I09   <- I09Betas["sl", "0.025quant"]
+Beta3up.I09   <- I09Betas["sl", "0.975quant"]
+
+Ibeta3 <- ggplot() +
+annotate("rect", xmin = Beta3lo.I09, xmax = Beta3up.I09,
+                  ymin = 0, ymax = 25, fill = "gray88") +
+geom_line(data = PosteriorBeta3.I09,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta3.I09,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for SL") +
+ylab("Density") +
+xlim(-0.05,0.15) + ylim(0,25) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta3mean.I09, linetype = "dashed") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1))+
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) 
+
+# Combine plots
+ggarrange(Ibeta1, Ibeta2, Ibeta3,
+                        labels = c("A", "B", "C"),
+                        ncol = 2, nrow = 2)
+```
+
+Figure \@ref(fig:ch5-I9-betas) indicates that for model I09 the intercept, slope for pH and male standard length all differ from zero and are statistically important. The distributions of the informative priors are based on data from a Europe-wide study of three-spined stickleback morphology (priors summarised in Table 5.2). 
+
+#### Comparison with frequentist Gaussian GLM {#pois-freq-comp}
+
+We can compare the results of the best-fitting Bayesian Poisson GLMs obtained with non-informative and informative priors (M09 and I09) with the same model fitted in a frequentist setting. Execution of the model in a frequentist framework can be performed with:
+
+`Freq <- glm(plate ~ ph + sl, family = "poisson", data = ga)`
+
+The results are obtained with:
+
+`round(summary(Freq)$coef[,1:4],3)`
+
+```{r ch5-freq_comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+Freq <- glm(plate ~ ph + sl, family = "poisson", data = ga)
+
+round(summary(Freq)$coef[,1:4],3)
+```
+
+We already have the results for the Bayesian models, but these can be displayed for the model with default priors with:
+
+`round(M09Betas, digits = 3)`
+
+```{r ch5-def_comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+round(M09Betas, digits = 3)
+```
+
+And for the best-fitting model with informative priors:
+
+`round(I09Betas, digits = 3)`
+
+```{r ch5-inf_comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+round(I09Betas, digits = 3)
+```
+
+Results can be combined and presented formally:
+
+Table 5.5: **Parameters for fixed effects of a model to investigate the evolution of lateral plate number in three-spined sticklebacks on North Uist for a frequentist GLM, Bayesian GLM with default priors and Bayesian GLM with informative priors. Mean (sd) parameter estimates are shown for each model.**
+
+|Model                 |Intercept  |pH        |sl        |
+|:---------------------|:---------:|:--------:|:--------:|
+|Frequentist           |-4.01(0.66)|0.49(0.13)|0.05(0.02)|
+|Bayesian (default)    |-4.01(0.66)|0.49(0.13)|0.05(0.02)|
+|Bayesian (informative)|-3.74(0.43)|0.44(0.10)|0.05(0.02)|
+
+While parameter estimates for the frequentist and Bayesian model with non-informative priors are almost identical, results for the Bayesian model with informative priors diverge slightly, with parameter estimates having slightly lower variance.
+
+### Conduct model checks
+
+After model fitting and obtaining the posterior distributions, the next step is validation of the model through model checks.
+
+#### Model selection using the Deviance Information Criterion (DIC) {#pois-dic}
+
+We adopted an information theoretic (IT) approach in this analysis, fitting nine biologically plausible alternative _a priori_ models using both non-informative and informative priors. We assessed model fit using the DIC (Section 5.7) and identified models `M09` and `I09` as the most probable.
+
+Given the approach we have used, there is no justification for undergoing further model selection. An exception might be a case in which two or more models are equally probable, in which case we might consider a model averaging procedure to arrive at an optimum model. However, in the case of the present study, there was no ambiguity concerning the best-fitting model.
+
+#### Dispersion {#pois-disp}
+
+Poisson GLMs assume that the mean and variance of the response variable vary at the same rate. This assumption must be confirmed. Overdispersion means that a Poisson distribution does not adequately model the variance and is not appropriate for the analysis.
+
+We will implement the 7-step protocol of [@Zuur_2017] to assess dispersion in the Poisson GLM with informative priors:
+
+1. _Apply Poisson GLM in INLA_
+
+2. _Simulate a set of regression parameters from the posterior distribution_
+
+3. _Calculate expected values_
+
+4. _Simulate count data using the `rpois` function_
+
+5. _Calculate Pearson residuals for simulated data_
+
+6. _Repeat steps 2-5 x 1000 times_
+
+7. _Compare sums of squared Pearson residuals with observed data_
+
+##### Apply Poisson GLM in INLA {#pois-sim}
+
+Working just with the model with informative priors for brevity, we re-run the model with the `config = TRUE` option to permit the simulation of regression parameters:
+
+`I09 <- inla(f09, family = "poisson", data = ga, control. compute = list(config = TRUE), control.predictor = list( compute = TRUE), control.fixed = list(mean.intercept = -3.4, prec.intercept = 0.6^(-2), mean = list(ph = 0.5, sl = 0.1), prec = list(ph = 0.2^(-2), sl = 0.05^(-2))))`
+
+##### Simulate regression parameters from the posterior distribution
+
+Use the `inla.posterior.sample` function to simulate regression parameters with the output stored in the `SimData` object.
+
+`set.seed(1966)`
+
+`SimData <- inla.posterior.sample(n = 1, result = I09)`
+
+SimData comprises 60 rows, with the first 57 rows simulated values and the last 3 rows simulated regression parameters. It can be viewed with:
+
+`SimData[[1]]$latent`
+
+Note that `SimData` is just one set of simulated values (we specified n = 1).
+
+##### Calculate predicted values 
+
+Start by accessing the last 3 rows of `SimData` containing the betas and use them to calculate the fitted values:
+
+`BetaRows <- (nrow(SimData[[1]]$latent) - 2):`  
+
+`nrow(SimData[[1]]$latent)`
+
+`Betas <- SimData[[1]]$latent[BetaRows]`
+
+`X <- model.matrix(~ ph + sl, data = ga)`
+
+`mu <- exp(X %*% Betas)`
+
+##### Simulate count data using `rpois`
+
+Using the `rpois` function we can simulate a set of 57 plate counts that fit a Poisson distribution:
+
+`Ysim <- rpois(n = nrow(ga), lambda = mu)`
+
+##### Calculate summary statistic
+
+The Pearson residuals for the single set of simulated data can be calculated with:
+
+`mu1 <- I09$summary.fitted.values[,"mean"]`
+
+`Es <- (Ysim - mu1) /sqrt(mu1)`
+
+`N    <- nrow(ga)`
+
+`Npar <- length(BetaRows)`
+
+`round(sum(Es^2) / (N - Npar),1)`
+
+The residuals should be close to 1, which is the case. 
+
+##### Repeat simulation
+
+We now repeat steps 2-5 to generate 1000 simulations:
+
+`SimData <- inla.posterior.sample(n = 1000, result = I09)`
+
+`N      <- nrow(ga)`
+
+`Ysim   <- matrix(nrow = N, ncol = 1000)`
+
+`mu.sim <- matrix(nrow = N, ncol = 1000) for (i in 1:1000){ Betas <- SimData[[i]]$latent[BetaRows] mu.sim[,i] <- exp(X %*% Betas) Ysim[,i]   <- rpois(n = N, lambda = exp(X %*% Betas))}`
+
+This gives us 1000 simulated predictions of plate number.
+
+##### Compare dispersion of simulated and observed data
+
+Obtain the squared Pearson residuals for the observed data:
+
+`E1  <- (ga$plate - mu1) /sqrt(mu1)`
+
+`Dispersion <- sum(E1^2) / (N - Npar)`
+
+And the same for the simulated datasets:
+
+`Dispersion.sim <- NULL for(i in 1:1000){ e2 <- (Ysim[,i] - mu.sim[,i]) /sqrt(mu.sim[,i]) Dispersion.sim[i] <- sum(e2^2) / (N - Npar) }`
+
+Plot a frequency histogram of estimates of dispersion for the simulated data:
+
+`par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.3) hist(Dispersion.sim, xlab = "Model dispersion", ylab = "Frequency", main = "", xlim = c(0, 2.5), breaks = 16)`
+
+And add a black dot to show dispersion for the observed data:
+
+`points(x = Dispersion, y = 0, pch = 19, cex = 2.5, col = 1)`
+
+(ref:ch5-disp-plot) **Frequency histogram for 1000 simulated (gray bars) and observed (black dot) dispersion statistics for three-spined stickleback lateral plate counts.**
+
+```{r ch5-disp-plot, fig.cap='(ref:ch5-disp-plot)', fig.align='center', fig.dim = c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+I09 <- inla(f09, family = "poisson", data = ga,
+            control.compute = list(config = TRUE),
+            control.predictor = list(compute = TRUE), 
+            control.fixed = list(mean.intercept = -3.4,
+                                 prec.intercept = 0.6^(-2),
+                                 mean = list(ph = 0.5,
+                                             sl = 0.1),
+                                 prec = list(ph = 0.2^(-2),
+                                             sl = 0.05^(-2))))
+
+# 2. Simulate regression parameters using the inla.posterior.sample 
+# function to simulate from the model. The output is 
+# stored in the Sim object.
+
+set.seed(1966)
+SimData <- inla.posterior.sample(n = 1, result = I09)
+
+# This gives an object with 60 rows for this 
+# data set and model. The first 57 
+# rows are simulated values for eta = X * beta, 
+# where X is the matrix with covariates, and 
+# the last 3 rows are simulated regression parameters. 
+# This is just one set of simulated values 
+# (i.e. n = 1 in the function above). 
+
+# 3: Calculate predicted values
+
+BetaRows <- (nrow(SimData[[1]]$latent) - 2):nrow(SimData[[1]]$latent)
+Betas    <- SimData[[1]]$latent[BetaRows]
+
+# Now get the corresponding X matrix so that INLA can calculate X * Betas.
+X <- model.matrix(~ ph + sl, data = ga)
+
+# And now we can calculate: exp(X * Betas)
+mu <- exp(X %*% Betas)
+
+# 4. Simulate count data
+Ysim <- rpois(n = nrow(ga), lambda = mu)
+
+# We now have 57 simulated values that 
+# correspond to the observed covariate values. 
+
+# 5: Calculate summary statistic
+
+mu1 <- I09$summary.fitted.values[,"mean"]  
+Es <- (Ysim - mu1) /sqrt(mu1)
+N    <- nrow(ga) 
+Npar <- length(BetaRows)  
+
+
+# Step 6: Repeat steps 2 – 5 x 1000 times
+
+SimData <- inla.posterior.sample(n = 1000, result = I09)
+
+# We have 1000 simulated mean values from the model. 
+# Extract the simulated betas and predict plate number.
+
+N      <- nrow(ga)
+Ysim   <- matrix(nrow = N, ncol = 1000)
+mu.sim <- matrix(nrow = N, ncol = 1000)
+for (i in 1:1000){
+  Betas      <- SimData[[i]]$latent[BetaRows]
+  mu.sim[,i] <- exp(X %*% Betas)
+  Ysim[,i]   <- rpois(n = N, lambda = exp(X %*% Betas))
+}
+
+# 7: Compare simulation results and observed data
+
+E1  <- (ga$plate - mu1) /sqrt(mu1)
+Dispersion <- sum(E1^2) / (N - Npar)
+
+# We calculate the same statistic for 
+# each of the simulated data sets.
+Dispersion.sim <- NULL
+for(i in 1:1000){
+  e2 <- (Ysim[,i] - mu.sim[,i]) /sqrt(mu.sim[,i])
+  Dispersion.sim[i] <- sum(e2^2) / (N - Npar)
+}
+
+# Plot the simulated results
+par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.3)
+hist(Dispersion.sim,
+     xlab = "Model dispersion",
+     ylab = "Frequency",
+     main = "",
+     xlim = c(0, 2.5),
+     breaks = 16)
+
+# And identify the dispersion for the original Poisson GLM
+points(x = Dispersion, 
+       y = 0, 
+       pch = 19, 
+       cex = 2.5, 
+       col = 1)
+
+```
+
+The dispersion statistic for the observed data (black dot) in Fig. \@ref(fig:ch5-disp-plot) is at the lower end of the simulated data sets, indicating mild under-dispersion. Given that data were obtained for strictly freshwater three-spined stickleback populations on North Uist, and lateral plate counts in freshwater populations typically do not exceed 7 lateral plates, mild under-dispersion in the data is not unexpected. Since the observed dispersion falls within the range generated by random simulations (albeit at the lower end), we can conclude that model dispersion is acceptable, though mildly underdispersed, and proceed with model checks.
+
+#### Posterior predictive checks {#pois-ppc}
+
+Posterior predictive checks are used to assess whether a model generates realistic predictions by drawing simulated estimates from the joint posterior predictive distribution and comparing them with observed data with a posterior predictive p-value. If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar, whereas if close to 1 it means the model prediction is too high and if close to zero, too low.
+
+See the R script associated with this chapter for estimating and plotting the posterior predictive p-values for the Bayesian model with informative priors without interaction.
+
+(ref:ch5-PPC) **Frequency histogram of the posterior predictive p-values for the best-fitting Bayesian linear regression with informative priors to predict lateral plate number in three-spined sticklebacks from North Uist. The vertical dotted line indicates 0.5.**
+
+```{r ch5-PPC, fig.cap='(ref:ch5-PPC)', fig.align='center', fig.dim=c(6, 4), cache=TRUE,  message=FALSE, echo=FALSE, warning=FALSE}
+
+I09.pred <- inla(f09, family = "poisson", data = ga,
+              control.predictor = list(link = 1,
+                                    compute = TRUE),
+                 control.compute = list(dic = TRUE, 
+                                        cpo = TRUE),
+            control.fixed = list(mean.intercept = -3.4,
+                                 prec.intercept = 0.6^(-2),
+                                 mean = list(ph = 0.5,
+                                             sl = 0.1),
+                                 prec = list(ph = 0.2^(-2),
+                                             sl = 0.05^(-2))))
+
+ppp <- vector(mode = "numeric", length = nrow(ga))
+for(i in (1:nrow(ga))) {
+  ppp[i] <- inla.pmarginal(q = ga$plate[i],
+                    marginal = I09.pred$marginals.fitted.values[[i]])
+}
+
+ggplot() +
+geom_histogram(aes(ppp), binwidth = 0.1, 
+                    colour = "black", fill = "gray88") +
+xlab("Posterior predictive p-values") +
+ylab("Frequency") +
+geom_vline(xintercept = 0.5, linetype = "dotted") +
+theme(text = element_text(size=15))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                         colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+```
+
+The frequency histogram of posterior predictive p-values in Fig. \@ref(fig:ch5-PPC) shows that most values are close to zero or 1, with few close to 0.5, indicating the model check has not been satisfied; the data are under and over dispersed compared to the model. We will proceed with further model checks.
+
+#### Cross-validation model checking {#pois-cv}
+
+We use leave-one-out cross validation (LOO-CV) to examine how well the model is able to generalise to new data using the conditional predictive ordinate (CPO) and probability integral transform (PIT) to evaluate model goodness-of-fit. To obtain both we simply run the model using the `cpo = TRUE` option in `control.compute`.
+
+To ensure there are no potential numerical problems in estimating CPO or PIT for a given model, we run the following check:
+
+`sum(I09.pred$cpo$failure)`
+
+An outcome of zero indicates no problems with the computation of CPO or PIT. 
+
+A uniform distribution of PIT values indicates whether the predictive distributions match the data (see the R script associated with this chapter).
+
+(ref:ch5-PIT) **A. Frequency histogram; B. Uniform Q-Q plot with confidence bands (shaded gray), for cross-validated PIT values for the best-fitting Bayesian Poisson GLM with informative priors.**
+
+```{r ch5-PIT, fig.cap='(ref:ch5-PIT)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+PIT <- (I09.pred$cpo$pit)
+
+Pit1 <- ggplot() +
+geom_histogram(aes(PIT), binwidth = 0.08, 
+                        colour = "black", fill = "gray88") +
+xlab("PIT") +
+ylab("Frequency") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+Pit2 <- ggplot(mapping = aes(sample = I09.pred$cpo$pit)) +
+      stat_qq_band(distribution = "unif", alpha = 0.5) +
+      stat_qq_line(distribution = "unif", qprobs = c(0.1, 0.9)) +
+      stat_qq_point(distribution = "unif", size = 2.5, alpha = 0.7) +
+      xlab("Theoretical quantiles") + ylab("Sample quantiles") +
+      theme(text = element_text(size=13)) +
+      theme(panel.background = element_blank()) +
+      theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+      theme(strip.background = element_rect
+           (fill = "white", color = "white", size = 1))
+
+
+ggarrange(Pit1, Pit2,
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+```
+
+The frequency histogram of PIT values in Fig. \@ref(fig:ch5-PIT)A shows that the distribution is broadly uniform. This conclusion is supported by the Q-Q plot (Fig. \@ref(fig:ch5-PIT)B), which shows that the PIT values match a uniform distribution.
+
+#### Bayesian residuals analysis {#pois-resids}
+
+Homogeneity of residual variance can be assessed visually by plotting model residual variance against fitted values as well as each variable in the model (see the R script associated with this chapter).
+
+(ref:ch5-resids) **Bayesian residuals plotted against: A. fitted values; B. loch pH; and C. population mean standard length (mm), to assess homogeneity of residual variance.**
+
+```{r ch5-resids, fig.cap='(ref:ch5-resids)', fig.align='center', fig.dim=c(6, 4), cache=TRUE, message=FALSE, echo=FALSE, warning=FALSE}
+
+Fit <- I09.pred$summary.fitted.values[, "mean"]
+
+# Calculate residuals
+Res <- ga$plate - Fit
+ResPlot <- cbind.data.frame(Fit,Res,ga$ph,ga$sl)
+
+# Plot residuals against fitted
+FigA <- ggplot(ResPlot, aes(x=Fit, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("Bayesian residuals") + xlab("Fitted values") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# And plot residuals against variables in the model
+FigB <- ggplot(ResPlot, aes(x=ga$ph, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("pH") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+FigC <- ggplot(ResPlot, aes(x=ga$sl, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("SL (mm)") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(FigA, FigB, FigC,
+          labels = c("A", "B", "C"),
+          ncol = 3, nrow = 1)
+
+```
+
+Ideally, the distribution of residuals around zero should be random along the horizontal axis. For Fig. \@ref(fig:ch5-resids)A there is some deviation from this pattern, though there are few fitted values >8. For Figs. \@ref(fig:ch5-resids)B,C the pattern of residuals is acceptable.
+
+
+#### Prior sensitivity analysis {#pois-sens}
+
+A final model check is to examine prior distributions through a sensitivity analysis that involves systematically changing prior distributions and examining the magnitude of outcome for the posterior distribution. 
+
+We will investigate prior sensitivity by increasing and decreasing priors on the fixed effects by 20% and examined the outcome for the posterior mean (see the R script associated with this chapter).
+
+The original priors for the fixed effects on model `I09` were (mean, $\sigma^2$):
+
+$\beta intercept$ ~ _N_(-3.40, 0.36) ($\tau$ = 2.8)
+
+$\beta ph$ ~ _N_(0.50, 0.04) ($\tau$ = 25)
+
+$\beta sl$ ~ _N_(0.10, 0.0025) ($\tau$ = 400)
+
+In the case of an increase by 20%, the priors for the fixed effects are:
+
+$\beta intercept$ ~ _N_(-2.72, 0.44)   ($\tau$ = 2.3)
+
+$\beta ph$ ~ _N_(0.60, 0.048)   ($\tau$ = 20.7)
+
+$\beta sl$ ~ _N_(0.12,0.003)    ($\tau$ = 331)
+
+In the case of a decrease by 20%, the priors for the fixed effects are:
+
+$\beta intercept$ ~ _N_(-4.08, 0.29)   ($\tau$ = 3.4)
+
+$\beta ph$ ~ _N_(0.40, 0.04)     ($\tau$ = 31.2)
+
+$\beta sl$ ~ _N_(0.08, 0.002)   ($\tau$ = 493.8)
+
+Table 5.6: **Sensitivity analysis for a 20% increase and decrease in priors on fixed effects and the % change in the posterior mean.**
+
+|Parameter|% prior|Mean|0.025CI|0.975CI|% posterior|
+|:--------|:----:|:---:|:-----:|:-----:|:--------:|
+|         | +20   |-3.49|-4.38  |-2.60  |+6.7      |
+|Intercept| 0    |-3.74|-4.59  |-2.89  |0         |
+|         | -20  |-4.04|-4.83  |-3.24  |-8.0       |
+|         |      |     |       |       |          |
+|         | +20   |0.42 |0.23   |0.62   |-4.5     |
+|sl       | 0    |0.44 |0.25   |0.62   |0         |
+|         | -20  |0.45 |0.27   |0.63   |+2.3       |
+|         |      |     |       |       |          |
+|         | +20   |0.05|0.013  |0.087   |0        |
+|pH       | 0    |0.05|0.018  |0.091   |0         |
+|         | -20  |0.06|0.025  |0.095   |+11        |
+
+The results of the prior sensitivity analysis (Table 5.6) show that increases and decreases to priors as large as 20% result in relatively modest changes to the posterior distribution.
+
+We can additionally plot the posterior distributions of these alternative models (see the R script associated with this chapter).
+
+(ref:ch5-post-plot) **Posterior distributions for parameters of a Bayesian Poisson GLM to predict lateral plate number in three-spined sticklebacks from North Uist. Distributions for: A. model intercept; B. slope for pH; C. standard length. The solid black line is the posterior distribution for the optimal model, the dashed gray line is the posterior distribution for an alternative model with the priors increased by 20%, the dotted gray line is the posterior distribution for an alternative model with the priors decreased by 20%.**
+
+```{r ch5-post-plot, fig.cap='(ref:ch5-post-plot)', fig.align='center', fig.dim=c(6, 5), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model with priors unchanged
+I9.inform <- inla(f09, family = "poisson", data = ga,
+                  control.predictor = list(link = 1,
+                                        compute = TRUE),
+                     control.compute = list(dic = TRUE, 
+                                            cpo = TRUE),
+                 control.fixed = list(mean.intercept = -3.4,
+                                      prec.intercept = 0.6^(-2),
+                                      mean = list(ph = 0.5,
+                                                  sl = 0.1),
+                                      prec = list(ph = 0.2^(-2),
+                                                  sl = 0.05^(-2))))
+# Model with priors increased
+I9.plus20 <- inla(f09, family = "poisson", data = ga,
+                  control.predictor = list(link = 1,
+                                        compute = TRUE),
+                  control.compute = list(dic = TRUE, 
+                                         cpo = TRUE),
+                  control.fixed = list(mean.intercept = -2.72,
+                                       prec.intercept = 0.66^(-2),
+                                       mean = list(ph = 0.6,
+                                                   sl = 0.12),
+                                       prec = list(ph = 0.22^(-2),
+                                                   sl = 0.055^(-2))))
+# Model with priors decreased
+I9.minus20 <- inla(f09, family = "poisson", data = ga,
+                   control.predictor = list(link = 1,
+                                         compute = TRUE),
+                  control.compute = list(dic = TRUE, 
+                                         cpo = TRUE),
+                  control.fixed = list(mean.intercept = -4.08,
+                                       prec.intercept = 0.54^(-2),
+                                       mean = list(ph = 0.4,
+                                                   sl = 0.08),
+                                       prec = list(ph = 0.179^(-2),
+                                                   sl = 0.045^(-2))))
+
+
+# Model intercept (Beta1)
+PostBeta1.I9.inform  <- as.data.frame(I9.inform$marginals.fixed$`(Intercept)`)
+PostBeta1.I9.plus20  <- as.data.frame(I9.plus20$marginals.fixed$`(Intercept)`)
+PostBeta1.I9.minus20 <- as.data.frame(I9.minus20$marginals.fixed$`(Intercept)`)
+
+beta1.sens <- ggplot() +
+  geom_line(data = PostBeta1.I9.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid") +
+geom_line(data = PostBeta1.I9.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44") +
+geom_line(data = PostBeta1.I9.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44") +
+xlab("Intercept") +
+ylab("Density") +
+xlim(-6,-1) +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Male ph (Beta2)
+PostBeta1.I9.inform  <- as.data.frame(I9.inform$marginals.fixed$`ph`)
+PostBeta1.I9.plus20  <- as.data.frame(I9.plus20$marginals.fixed$`ph`)
+PostBeta1.I9.minus20 <- as.data.frame(I9.minus20$marginals.fixed$`ph`)
+
+beta2.sens <- ggplot() +
+geom_line(data = PostBeta1.I9.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid") +
+geom_line(data = PostBeta1.I9.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44") +
+geom_line(data = PostBeta1.I9.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44") +
+xlab("Slope for pH") +
+ylab("Density") +
+xlim(0,0.9) +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Supplementary feeding (Beta3)
+PostBeta1.I9.inform  <- as.data.frame(I9.inform$marginals.fixed$`sl`)
+PostBeta1.I9.plus20  <- as.data.frame(I9.plus20$marginals.fixed$`sl`)
+PostBeta1.I9.minus20 <- as.data.frame(I9.minus20$marginals.fixed$`sl`)
+
+beta3.sens <- ggplot() +
+geom_line(data = PostBeta1.I9.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid") +
+geom_line(data = PostBeta1.I9.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44") +
+geom_line(data = PostBeta1.I9.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44") +
+xlab("Slope for SL") +
+ylab("Density") +
+xlim(-0.05,0.15) +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ ggarrange(beta1.sens, beta2.sens, beta3.sens,
+                    labels = c("A", "B", "C"),
+                    ncol = 2, nrow = 2)
+
+```
+
+Plots of the posterior distributions for the model fixed effects indicate that the posterior distributions are robust to changes in the priors placed on them.
+
+#### Conclusions from model checks
+
+The model with informative priors showed a comparable goodness-of-fit to that of the model with default priors. An analysis of model dispersion identified mild under-dispersion and a plot of posterior predictive p-values suggested the same. Leave-one-out cross validation indicated that the predictive distributions matched the data well and residuals plots failed to highlight anything problematic with the model fit. Finally, prior sensitivity analysis demonstrated the model to be robust to changes in prior distributions of fixed effects. Overall then, the best-fitting Bayesian Poisson GLM with informative priors provides a good representation of the data.
+
+### Interpret and present model output	{#pois-present}
+
+Specification of the Bayesian Poisson GLM using mathematical notation takes the form:
+
+$Plate_{i}$ ~ $Poisson(\mu_{i})$
+
+_E_($Plate_{i}$) = $\mu_i$   and   var($Plate_{i}$) = $\mu_i$
+
+_log_$\mu_i$ = $\eta_i$
+
+$\eta_i$ = $\beta_1$ + $\beta_2$ x $pH_{i}$ + $\beta_3$ x $Length_{i}$
+
+Where $Plate_{i}$ is the median number of lateral bony plates of three-spined stickleback population _i_ assuming a Poisson distribution with mean and variance $\mu_i$. The covariate $pH_{i}$ is continuous and represents mean loch pH and $Length_{i}$ is a continuous covariate representing mean standard length of stickleback population _i_. The numerical output for the fixed effects of the best-fitting model with informative priors is:
+
+```{r ch5-final-betas, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+Final <- inla(f09, family = "poisson", data = ga,
+                     control.predictor = list(link = 1,
+                                           compute = TRUE),
+                        control.compute = list(dic = TRUE, 
+                                               cpo = TRUE),
+                        control.fixed = list(mean.intercept = -3.4,
+                                             prec.intercept = 0.6^(-2),
+                                             mean = list(ph = 0.5,
+                                                         sl = 0.1),
+                                             prec = list(ph = 0.2^(-2),
+                                                         sl = 0.05^(-2))))
+
+# Posterior mean values and 95% CI for fixed effects
+BetasFinal <- Final$summary.fixed[,c("mean", "sd", 
+                                     "0.025quant", 
+                                     "0.975quant")] 
+round(BetasFinal, digits = 3)
+```
+
+These results can be more formally presented in the following way: 
+
+Table 5.7: **Posterior mean estimates for median lateral plate number of three-spined stickleback populations on North Uist as a function of loch pH and mean population standard length (mm) modelled using a Poisson GLM fitted with INLA. CrI are the Bayesian 95% credible intervals.**
+
+|Model parameter      |Posterior mean|Lower 95% CrI|Upper 95% CrI|
+|:--------------------|:------------:|:-----------:|:-----------:|
+|Intercept            |-3.74         |-4.59        |-2.89        |
+|pH                   |0.44          |0.25         |0.62         |
+|Standard length      |0.054         |0.018        |0.091        |
+
+These results (Table 5.7) show a statistically important positive effect of loch pH and mean population standard length on lateral plate number.
+
+### Visualise the results
+
+The final of the 9 steps to fitting a Poisson GLM is to visualise the model. A figure helps with understanding model outcomes and provides a valuable summary of model findings for presentation. Coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch5-final-plot) **Posterior mean lateral plate number of three-spined stickleback populations on North Uist as a function of: A. loch pH; B. mean population standard length (mm), modelled using a Poisson GLM fitted with INLA. Shaded areas are Bayesian 95% credible intervals. Black points are observed data for different stickleback populations.**
+
+```{r ch5-final-plot, fig.cap='(ref:ch5-final-plot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+#Plot figure for ph
+MyData <- expand.grid(
+  ph = seq(5.2, 8.7, length = 50),
+  sl = 40)
+
+# 2. Make a design matrix
+Xmat <- model.matrix(~ ph + sl, data = MyData)
+Xmat <- as.data.frame(Xmat)
+
+lcb <- inla.make.lincombs(Xmat)
+
+# Re-run the model in R-INLA using the combined data set, ensuring
+# that `compute = TRUE` is selected in the `control.predictor` argument
+Final.Pred <- inla(f09, family = "poisson", data = ga,
+                       lincomb = lcb,
+                  control.inla = list(lincomb.derived.only = TRUE),
+             control.predictor = list(compute = TRUE),
+                 control.fixed = list(mean.intercept = -3.4,
+                                      prec.intercept = 0.6^(-2),
+                                      mean = list(ph = 0.5,
+                                                  sl = 0.1),
+                                      prec = list(ph = 0.2^(-2),
+                                                  sl = 0.05^(-2))))
+
+# Run loop to get mu, selo and seup
+Pred.marg <- Final.Pred$marginals.lincomb.derived
+for (i in 1:nrow(MyData)){
+  MyData$mu[i]  <- inla.emarginal(exp, Pred.marg[[i]])
+  lo.up <- inla.qmarginal(c(0.025, 0.975), 
+                          inla.tmarginal(exp, Pred.marg[[i]]))
+  MyData$selo[i] <- lo.up[1]
+  MyData$seup[i] <- lo.up[2]    	
+}               
+
+# Plot
+phfig <- ggplot()  +
+geom_jitter(data = ga, 
+                     aes(y = plate, x = ph),
+                     shape = 19, size = 2.2,
+                     height = 0.25, width = 0.25, alpha = 0.6) +
+xlab("Loch pH")  +
+ylab("Posterior mean plate number")  +
+ylim(0,13) +# + xlim(25,45) +
+theme(text = element_text(size = 13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+theme(strip.background = element_rect (fill = "white", color = "white", size = 1)) +
+geom_line(data = MyData, aes(x = ph, y = mu), size = 1) +
+geom_ribbon(data = MyData, aes(x = ph, ymax = seup, ymin = selo), alpha = 0.5)
+
+
+#=======================================
+
+#Plot figure for sl
+MyData <- expand.grid(
+  ph = 7,
+  sl = seq(25, 43, length = 50))
+
+# 2. Make a design matrix
+Xmat <- model.matrix(~ ph + sl, data = MyData)
+Xmat <- as.data.frame(Xmat)
+
+lcb <- inla.make.lincombs(Xmat)
+
+# Re-run the model in R-INLA using the combined data set, ensuring
+# that `compute = TRUE` is selected in the `control.predictor` argument
+Final.Pred <- inla(f09, family = "poisson", data = ga,
+                   lincomb = lcb,
+                   control.inla = list(lincomb.derived.only = TRUE),
+                   control.predictor = list(compute = TRUE),
+                   control.fixed = list(mean.intercept = -3.4,
+                                        prec.intercept = 0.6^(-2),
+                                        mean = list(ph = 0.5,
+                                                    sl = 0.1),
+                                        prec = list(ph = 0.2^(-2),
+                                                    sl = 0.05^(-2))))
+
+# Run loop to get mu, selo and seup
+for (i in 1:nrow(MyData)){
+  MyData$mu[i]  <- inla.emarginal(exp, Pred.marg[[i]])
+  lo.up <- inla.qmarginal(c(0.025, 0.975), 
+                          inla.tmarginal(exp, Pred.marg[[i]]))
+  MyData$selo[i] <- lo.up[1]
+  MyData$seup[i] <- lo.up[2]    	
+}               
+
+# Plot
+slfig <- ggplot() +
+geom_jitter(data = ga, 
+                     aes(y = plate, x = sl),
+                     shape = 19, size = 2.2,
+                     height = 0.25, width = 0.25, alpha = 0.6) +
+xlab("Mean population SL (mm)")  +
+ylab("")  +
+ylim(0,13) + # + xlim(25,45)
+theme(text = element_text(size = 13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+theme(strip.background = element_rect (fill = "white", color = "white", size = 1)) +
+geom_line(data = MyData, aes(x = sl, y = mu), size = 1) +
+geom_ribbon(data = MyData, aes(x = sl, ymax = seup, ymin = selo), alpha = 0.5)
+
+
+# Combine plots
+ggarrange(phfig, slfig, 
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+```
+
+The results of this statistical analysis can be summarised as follows:
+
+_A  Poisson GLM was fitted to data using Bayesian inference with INLA for lateral plate counts of three-spined sticklebacks from 57 populations on North Uist, Scotland. An Information Theoretic approach was adopted for model fitting, with nine alternative models formulated that comprised variables proposed as having importance as environmental agents of selection on lateral plate number in previously published studies (Table 5.7). In the best-fitting model there was a statistically important positive effect of loch pH and mean population standard length (in mm) (Table 5.7, Fig. \@ref(fig:ch5-final-plot)). The mean slope of the relationship between plate number and pH was 0.44 with 95% certainty that it lay between 0.25 and 0.62, and for standard length 0.054 with 95% certainty that it lay between 0.018 and 0.091 (Table 5.7). The model was fitted using informative priors on the fixed effects, obtained from a separate study of three-spined stickleback plate number derived from the entire European range of the species (Table 5.2)._
+
+## Conclusions
+
+In this analysis we used an Information Theoretic (IT) approach to choose among a set of biologically plausible models, in combination with informative priors based on existing data collected over a wide geographic range. The final Poisson GLM predicted three-spined stickleback lateral plate number on North Uist to vary positively as a function of loch pH and mean population standard length. 
+
+

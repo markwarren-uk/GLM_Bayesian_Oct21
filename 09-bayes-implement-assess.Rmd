@@ -1,0 +1,96 @@
+# Implementing and assessing Bayesian GLMs
+
+The growth of interest in utilising Bayesian inference in ecology, and more broadly in biology, adds a new dimension to the way information can be extracted from data. However, fitting models in a Bayesian framework also requires careful thought and is substantially more demanding, both in terms of model fitting, validation and presentation but also in how results are reviewed and assimilated. At present there are no well-established protocols for ecologists for employing and presenting the results of Bayesian models, how prior distributions should be formulated, or how studies that present the results of Bayesian models should be scrutinised during peer-review.
+
+In this chapter we offer suggestions which, while not definitive, are intended to guide ecologists in avoiding pitfalls in using Bayesian inference to analyse their research data and in assessing models presented by others.
+
+## Prior information
+
+A Bayesian truism is that: _“Today’s posterior is tomorrow’s prior”_. While this maxim is fundamental to the Bayesian approach, in practical terms, deriving prior distributions needs careful thought and execution. Indeed, the process of deriving suitable prior distributions is a substantial and controversial field of study in its own right, and one that we will touch on here only superficially.
+
+Several types of information can potentially be used for constructing prior distributions, including:
+
+1. The results of previous research.
+
+2. Logical considerations (i.e. biological plausibility).
+
+3. Expert knowledge.
+
+4. Pilot data.
+
+### The results of previous research
+
+Previously collected data from comparable studies can provide estimates of model parameters and including this information in prior distributions seems logical in the context of fitting Bayesian GLMs, and we used this approach in Chapters 5,6 and 8. However, there are considerations in relation to similarity, ‘exchangeability’ and bias. 
+
+In some cases related studies provide no relevant information, or incorporate biases that render information unusable, for example through lack of experimental quality, scientific rigour, or because the setting of previous studies was not focused on the parameter(s) of interest in our own study.
+
+In other cases, studies may be judged sufficiently similar that data are exchangeable. Exchangeability means that the posterior distribution from one set of data can be reliably used as the prior distribution that is updated by the second data set. Pilot data, or subsets of data from a main study, can often unambiguously be considered as exchangeable and used to generate priors with confidence.
+
+However, in cases where data come from a broadly similar study design, the extent to which we place reliance on priors derived from it may need to be moderated in translating to our own study. Considerations include characteristics of the population on which the study has been conducted, the experimental procedures used, and the data analysis employed in the study; see @Miocevic_2020 for a fuller discussion. 
+
+### Logical considerations
+
+Rather than adopting non-informative priors on parameters, an approach to fitting at least weakly informative priors is to ensure that the prior distribution encompasses a distribution that is biologically plausible.
+
+Thus, even without specific parameter estimates, we may have enough information about a study system to be able to define a plausible range of values. Such priors would typically be weakly informative and would tend to place conservative limits on parameter values.
+
+For example, in the case of modelling a trait such as body size, prior hyperparameters may define a mean size that is typical for the species/population and includes a distribution that encompasses the previously observed range.
+
+### Expert knowledge
+
+Taking advantage of expert knowledge to obtain prior distributions may generate weakly informative or highly informative prior distributions. A range of expert opinion can also provide a ‘consensus’ prior based on the amalgamation of multiple opinions, or may alternatively offer the opportunity to examine a range of competing alternative opinions using an information theory approach.
+
+However expert opinion is used, the process of obtaining it and the rationale behind it should be made explicit. Subjective expert opinion, while controversial, is a potentially rich source of prior information and can play a vital role in generating robust prior distributions when alternative sources are unavailable or existing data are sparse.
+
+The challenge in taking advantage of expert opinion is in converting an informal opinion into a mathematical prior distribution that can be used in a model. Simply asking someone to provide prior distribution parameters is unrealistic; while an individual may have considerable expertise in the subject matter, they may have little experience in making reliable probability judgements. Instead a structured elicitation process is required to capture the parameters of interest, and protocols are available to facilitate this process [@Spiegelhalter_2003].
+
+A final point regarding expert opinion is that if model results are to be broadly accepted, the prior distributions generated in this way should be supported with evidence, or at least represent conventional views. @Spiegelhalter_2003 provide a succinct discussion of prior elicitation in the context of medical statistics, but their recommendations have relevance for ecology.
+
+### Pilot data
+
+Pilot data would typically be expected to have the advantage of exchangeability, though whether this is the case will depend on the nature of the pilot data and its origin. A pilot study may comprise a preliminary component of a larger study, or represent a discrete piece of work that precedes a fuller study, examples are the studies we present in Chapter 4 and 7. Irrespective of its origin, pilot data which would otherwise be discarded can usefully serve to generate prior distributions for a main study.
+
+## Presenting the results of a Bayesian GLM
+
+After fitting a GLM, what is appropriate to include in a paper to report model results? 
+
+It is first important to recognise that the results of a Bayesian model are not summarised with parameter point estimates and instead comprise posterior distributions, which captures the uncertainty of the true parameter value. This can be summarised in a table with mean, sd and credible intervals, but also with a plot of the posterior distribution, like those shown in Chapters 4-8.
+
+A full explanation of the impact of priors used in a model is also needed, including what priors were used and a justification that includes how the priors were obtained (previous research, logical considerations, expert knowledge, pilot data) and why each prior is specified as it is in the model. A justification is needed even in the case of non-informative priors. A plot of the prior distribution along with the posterior can also be informative.
+
+In the case that weakly informative or informative priors are used, a comparison of model results with non-informative priors is needed to illustrate their impact. The results of a sensitivity analysis of priors is also indispensable as a means of illustrating the impact of the priors.
+
+Given that most scientific journals now permit the inclusion of supplementary material, the results of an exploration of priors can be referenced in the main body of a manuscript, with the details appended as a supplement. This material is a necessary component of any Bayesian model and serves to encourage openness, transparency and replicability in Bayesian modelling.
+
+## Reviewing Bayesian GLMs
+
+In addition to fitting Bayesian GLMs, we may be called upon to review the output of Bayesian ecological models, either as feedback for a colleague, as peer review of a manuscript for publication in a scientific journal or research thesis, or as a review of a grant application. Here we present a short checklist, modified from @Depaoli_2017, to assist with reviewing Bayesian GLMs.
+
+1. Is a coherent research question properly stated?
+
+2. Is the model unambiguously explained, with all model parameters identified, justified and explained?
+
+3. Is an explanation of priors provided, including what types of prior and how they were obtained?
+
+4. Does the posterior distribution make biological sense in the context of the study and the research question posed?
+
+5. Do the authors provide a sensitivity analysis of priors and their influence on the posterior distribution?
+
+## Misuse of Bayesian inference {#misuse}
+
+A widespread concern in scientific data analysis is a problem termed ‘P-hacking’ (also known as ‘inflation bias’ and ‘selective reporting’). This problem arises when researchers either select data or repeat alternative statistical analyses with the sole focus of achieving statistical significance, typically a P-value that is less than 0.05.
+
+By definition, P-hacking is not a problem in a Bayesian setting because null hypothesis significance testing and P-values play no role in a Bayesian model. However, a new problem of selection of informative priors based on observed data to obtain a particular result (‘prior-hacking’) can instead arise. The way to combat prior-hacking is basing priors on decisions that are not influenced by model variables; priors must represent existing information and can be justified without reference to the sample data.
+
+The risk of prior-hacking represents a strong case against the use of informative priors and, therefore, when informative priors are implemented in a model a persuasive case needs to be made for their use. Full disclosure of the origin of priors, combined with a post-hoc prior sensitivity analysis are needed to promote transparency in Bayesian modelling.
+
+An additional tool to combat P-hacking/prior-hacking and facilitate reproducibility, is that advocated by @Benjamin_2017. Here the proposal is to lower the significance threshold of statistical tests from 0.05 to 0.005. This is advised on the basis that the arbitrary significance level of 0.05 is set too high, particularly for novel discoveries. In a Bayesian context, adopting this approach would mean presenting 95% and 99.5% credible intervals. In cases where zero lay outside 95% credible intervals but within 99.5% credible intervals, the result might be considered suggestive, rather than important.
+
+## Conclusions
+
+The more widespread implementation of Bayesian inference with informative priors in ecology is to be encouraged. The field is rich in theory and data and Bayesian methods offer the opportunity to take advantage of  this previous material. A key component of adopting this approach, however, is to recognise that transparency and openness are fundamental to Bayesian statistics, and particularly in regard to the specification and reporting of priors.
+
+
+
+
+

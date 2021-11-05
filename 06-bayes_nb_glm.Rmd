@@ -1,0 +1,1283 @@
+# Bayesian negative binomial GLM {#nb-glm}
+
+A negative binomial GLM is used for the same type of data that a Poisson GLM would be used to analyse; count data that does not take values below zero. However, the negative binomial GLM does not assume that the variance of the response variable is equal to its mean and, therefore, can be used to model overdispersed data, which is a common property of ecological data. Formulation of a Bayesian negative binomial GLM is slightly more complex than the Bayesian Poisson GLM presented in Chapter \@ref(pois-glm), and a negative binomial GLM is typically used when a Poisson GLM is not appropriate due to overdispersion.
+
+## Coral abundance
+
+We fit a GLM to data on coral diversity in the Sulu Sea off the North coast of Borneo. Surveys of Scleractinia (hard coral) species were conducted on reefs inside and outside a marine protected area established 5 years previously. Surveys were conducted at specific depths, ranging from 3-10 m. A randomly demarcated area of 100 m^2^ was comprehensively searched by a pair of divers and the number of coral species recorded on a slate board. All coral species were photographed to confirm _in situ_ identification using a reference collection. Survey sites were at least 8 km apart and were surveyed only once.
+
+Here we analyse data on coral diversity on reefs inside and outside a protected area while controlling for water depth, which is a variable known to have a strong effect on coral diversity. The aim of the study was to understand the short-term impact of implementing a marine protected area in zones from which all fishing and tourism was prohibited.
+
+*__Import data__*
+
+```{r ch6-libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)  
+library(ggplot2)
+library(GGally)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(car)
+library(devtools)
+library(ggpubr)
+library(qqplotr)
+library(geiger)
+library(gridExtra)
+library(rlang)
+library(INLA)
+library(brinla)
+library(inlatools)
+```
+
+Data for coral diversity are saved in a comma-separated values (CSV) file coral.csv and are imported  into a dataframe in R using:
+
+`coral <- read_csv("coralsulu.csv")`
+
+```{r ch6-csv-coral, echo=FALSE, warning=FALSE, message=FALSE}
+coral <- read_csv("coralsulu.csv")
+```
+
+Start by inspecting the dataframe:
+
+`str(coral)`
+```{r ch6-str-coral, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(coral, vec.len=2)
+```
+
+The dataframe comprises `r nrow(coral)` observations of `r ncol(coral)` variables. Each row in the dataframe represents a separate surveyed reef (`site`). There is a single categorical variable `status` which indicates whether the reef was a protected or unprotected site. There are two continuous ecological variables: `depth` is water depth (in m) for each surveyed reef, and `species` is the number of scleractinian coral species.
+
+## Steps in fitting a Bayesian GLM {#nb-glm-steps}
+
+We will following the 9 steps to fitting a Bayesian GLM, detailed in Chapter \@ref(fit-steps).
+
+_1. State the question_
+
+_2. Perform data exploration_
+
+_3. Select a statistical model_
+
+_4. Specify and justify a prior distribution on parameters_
+
+_5. Fit the model_
+
+_6. Obtain the posterior distribution_
+
+_7. Conduct model checks_
+
+_8. Interpret and present model output_
+
+_9. Visualise the results_
+
+### State the question {#coral-question}
+
+This study was conducted to ascertain the benefit of implementing a marine protected area on coral diversity. The variable `species` is the response variable and conservation status (`status`) is a covariate. Because there is a well recognised negative relationship of water depth on coral species abundance (i.e. coral diversity is greater in shallow water), water depth (`depth`) is an additional covariate. Further, the effect of reef protected status may vary with water depth, particularly in the case of the impact of tourists who tend to cause most damage to corals in shallow water. Consequently, the interaction of `status` and `depth` on coral diversity (`species`) will also be included in a model.
+
+### Data exploration {#coral-eda}
+
+A data exploration is critical to identifying any potential problems or unusual patterns in the data. First check for missing data.
+
+`colSums(is.na(coral))`
+
+```{r ch6-nas, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+colSums(is.na(coral))
+```
+
+There are no missing data.
+
+#### Outliers {#coral-outliers}
+
+Outliers in the data can identified visually using Cleveland dotplots, R code is available in the R script associated with this chapter:
+
+(ref:ch6-dotplot) **Dotplots of water depth (m) and number of hard coral species at sampling sites in the Sulu Sea. Data are arranged by the order they appear in the dataframe.**
+
+```{r ch6-dotplot, fig.cap='(ref:ch6-dotplot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+coral <- coral %>%
+  mutate(order = seq(1:nrow(coral)))
+
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                          color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+#Write a function
+multi_dotplot <- function(filename, Xvar, Yvar){
+  filename %>% 
+    ggplot(aes(x = {{Xvar}})) +
+    geom_point(aes(y = {{Yvar}})) +
+    theme_bw() +
+    My_theme +
+    coord_flip() +
+    labs(x = "Order of Data")
+}
+
+#CHOOSE THE VARIABLE FOR EACH PLOT AND APPLY FUNCTION
+
+p1 <- multi_dotplot(coral, order, depth) 
+p2 <- multi_dotplot(coral, order, species) 
+
+#CREATE GRID
+grid.arrange(p1, p2, nrow = 1)
+
+```
+
+There are no obvious outliers in the Fig. \@ref(fig:ch6-dotplot). 
+
+#### Distribution of the dependent variable {#nb-dist}
+
+The distribution of the dependent variable will inform selection of the appropriate statistical model to use. Here we visualise coral species number with a density plot using the `geom_density()` function from the `ggplot2` package:
+
+`coral %>% ggplot(aes(species)) + geom_density() + xlab  ("Number of coral species") + ylab("Density") + xlim(25,125) + My_theme + theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))`
+
+(ref:ch6-freqdens) **Density plot of number of coral species from 32 surveyed reefs.**
+  
+```{r ch6-freqdens, fig.cap='(ref:ch6-freqdens)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+  
+  coral %>% 
+  ggplot(aes(species)) +
+  geom_density() +
+  xlab("Number of coral species") + ylab("Density") +
+  xlim(25,125) +
+  My_theme +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+```
+
+The density plot of the dependent variable (Fig. \@ref(fig:ch6-freqdens)) shows a distribution with a pronounced positive skew. 
+
+#### Balance of categorical variables {#nb-balance}
+
+The balance of the categorical variables status (the protected status of surveyed reefs) can be checked using the `table()` function.
+
+`table(coral$status)`
+
+```{r ch6-status-table, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+table(coral$status)
+```
+
+The design of the study is perfectly balanced.
+
+#### Multicollinearity among covariates {#nb-collin}
+
+If covariates in a model are correlated, then there is a risk that the model may produce unstable parameter estimates with inflated standard errors. Here we examine the relationships among model covariates using the `ggpairs` command from the `GGally` library (see R code associated with this chapter).
+
+(ref:ch6-ggpairs) **Plot matrix of covariates showing frequency plots, boxplots, frequency histograms, and frequency polygons.**
+
+```{r ch6-ggpairs, fig.cap='(ref:ch6-ggpairs)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+coral %>% 
+    ggpairs(columns = c("status","depth"), aes(colour=status, alpha = 0.8), lower = list(combo = wrap("facethist", binwidth = 2))) + My_theme
+```
+
+The plot matrix in Fig. \@ref(fig:ch6-ggpairs) indicates no evidence of collinearity. 
+
+#### Zeros in the response variable {#nb-zeros}
+
+The number of zeros in the response variable needs to be considered and will inform selection of the appropriate statistical model. The percentage of zeros in the response variable can be calculated with:
+
+`round((sum(coral$species == 0) / nrow(coral))*100,0)`
+
+`r round((sum(coral$species == 0) / nrow(coral))*100,0)`
+
+The response variable does not include any zeros.
+
+#### Relationships among dependent and independent variables {#nb-rels}
+
+Visual inspection of the data using plots will illustrate the nature of relationships among covariates (code for the plot is available in the R script associated with this chapter):
+
+(ref:ch6-scatter) **Multipanel scatterplot of number of coral species against water depth for protected and unprotected reefs with a line of best fit plotted.**
+
+```{r ch6-scatter, fig.cap='(ref:ch6-scatter)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+label_status <- c("protected"   = "Protected reef", 
+                  "unprotected" = "Unprotected reef")
+
+coral %>% ggplot() +
+  geom_point(aes(y = species, x = depth, 
+                               size = 1, alpha = 0.8)) +
+  geom_smooth(method = "lm", se = FALSE, 
+              aes(y = species, x = depth), colour = "black") + 
+  xlab("Depth (m)") + ylab("Number of coral species") +
+  xlim(2,10) + ylim(25,125) +
+  theme(text = element_text(size=15))  +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1)) +
+  facet_grid(. ~ status, 
+             scales = "fixed", space = "fixed", 
+             labeller=labeller (status = label_status)) +
+    theme(strip.text = element_text(size = 12, face="italic")) +
+  theme(legend.position = "none")
+```
+
+The plots in Fig. \@ref(fig:ch6-scatter) suggest a negative relationship between the number of coral species and water depth, with this relationship stronger for protected than unprotected reefs, which implies a status x depth interaction.
+
+#### Independence of response variable {#nb-indep}
+
+An assumption for a GLM is that each observation in a dataset is independent of all others. In the case of the present study each row of data represents data from a survey of a geographically discrete reef, with reefs a minimum of 8 km apart. Ostensibly then, these data were independent. However, there is the potential for spatial dependency in the data based on their location. A GLM does not permit spatial (or temporal) dependency to be adequately modelled and so, for the purposes of this analysis, while we will treat the data as independent, though that may not strictly be the case. 
+
+### Selection of a statistical model {#nb-select}
+
+The study was designed to gauge the effect of implementing protection measures on coral biodiversity. The dependent variable comprises coral species counts that potentially includes zero, though negative values are not possible. The distribution of the response variable is positively skewed  (Fig. \@ref(fig:ch6-freqdens)). The data will treated as independent, though there is the potential for spatial dependency in the data.
+
+Given these circumstances, a Poisson is an appropriate distribution as a starting point to model the data, in combination with a log link function. The Poisson is a non-normal distribution that is effective for modelling strictly positive integer data (such as counts). It has a single parameter (lambda, $\lambda$), which is both the mean and variance of the response variable. In the context of an INLA model, a Poisson model has no hyperparameter. 
+
+The link function is used to link the response variable (number of coral species) and the predictor function (protected status and water depth). In the case of a Poisson GLM the default is a log link function. The link function is needed to ensure model fitted values remain positive, while permitting zeros in the data. 
+
+### Specification of priors {#nb-prior-spec}
+
+Informative priors used in this study come from a previous similar study from the same region by @Waheed_2015. 
+
+#### Previous study
+
+In @Waheed_2015 coral diversity was modelled using a Poisson GLM with depth, exposure and distance to mainland as covariates. This model provides informative priors for model intercept and depth, but not for protected status. However, numerous other studies from several tropical regions have consistently demonstrated a positive effect of protected status on coral reef biodiversity, which enables us to confidently place weakly informative priors on the effect of reef protected status and its interaction with depth.
+
+#### Priors on the fixed effects {#nb-priors-fixed}
+
+Non-informative (default) priors were put on the fixed effects for model `M01`, which were: 
+
+$\beta intercept$ ~ _N_(0, 0) ($\tau$ = 0)
+
+$\beta depth$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta statusunprotected$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta interaction$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+And informative/weakly informative priors on the fixed effects for model `I01`:
+
+$\beta intercept$ ~ _N_(5, 0.25) ($\tau$ = 4)
+
+$\beta depth$ ~ _N_(-0.18, 0.0036) ($\tau$ = 278)
+
+$\beta statusunprotected$ ~ _N_(-0.5, 0.0625) ($\tau$ = 16)
+
+$\beta interaction$ ~ _N_(0.05, 1) ($\tau$ = 1)
+
+The prior for the intercept comes from @Waheed_2015, who present a model intercept of 3.8 ($\sigma$ = 0.08). Here we round the intercept to 5, with $\sigma$ = 0.5, to generate a weakly informative prior. We use an informative prior for the slope of depth from @Waheed_2015 of -0.18 ($\sigma$ = 0.06). An informative prior is also used for protected status, with a slope of -0.5 ($\sigma$ = 0.25) for unprotected sites. For the interaction term we use a weakly informative positive prior of 0.05 ($\sigma$ = 1).
+
+### Fit the models {#nb-fit-models}
+
+We fit the Bayesian Poisson GLMs using INLA with default priors (M01), and informative priors on the fixed effects (I01).
+
+We start by specifying the model formulae:
+
+`f01 <- species ~ depth * status`
+
+Then fit the default model `M01`, specifying `control.compute = list(dic = TRUE)` to enable model comparison:
+
+`M01 <- inla(f01, control.compute = list(dic = TRUE), family = "poisson", data = coral)`
+            
+Then fit the model with informative priors:
+  
+`I01 <- inla(f01, family = "poisson", data = coral, control. compute = list(dic = TRUE), control.fixed = list(mean. intercept = 5.0, prec.intercept = 0.5^(-2), mean = list(depth = -0.18, statusunprotected = -0.5, default = 0.05), prec = list(depth = 0.06^(-2), statusunprotected = 0.25^(-2), default = 1^(-2))))`
+                                      
+```{r ch6-fit-models, cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+f01 <- species ~ depth * status
+
+# Models M01-10 with default priors
+M01 <- inla(f01, 
+            control.compute = list(dic = TRUE), 
+            family = "poisson", 
+            data = coral)
+
+# Models I01 with informative priors
+I01 <- inla(f01, family = "poisson", data = coral,
+        control.compute = list(dic = TRUE),
+          control.fixed = list(mean.intercept = 5.0,
+                               prec.intercept = 0.5^(-2),
+                            mean = list(depth = -0.18,
+                            statusunprotected = -0.5,
+                                      default = 0.05),
+                            prec = list(depth = 0.06^(-2),
+                            statusunprotected = 0.25^(-2),
+                                      default = 1^(-2))))
+```
+
+### Obtain the posterior distribution {#nb-post-dist}
+
+#### Model with default priors {#nb-def-priors}
+
+Output for the fixed effects of  M01 can be obtained with:
+
+`M01Betas <- M01$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]`
+                                 
+`round(M01Betas, digits = 2)`
+
+```{r ch6-def-post, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+M01Betas <- M01$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")] 
+                                 
+round(M01Betas, digits = 2)
+```
+
+This reports the posterior mean, standard deviation and 95% credible intervals for the intercept and covariates.
+
+For the slope of the variable depth we have a posterior mean of -0.10 and lower 95% credible interval of -0.12 and upper 95% credible interval of -0.07; we are 95% certain that the posterior mean of the regression parameter for the slope of depth falls between these credible intervals, which means depth is statistically important in the model.
+
+We can similarly conclude that the effect of the protection status of a reef has an important effect on coral species biodiversity, and is lower for unprotected reefs. There is also an important effect of a depth x status interaction in the data.
+
+The posterior distribution of the fixed effects can be visualised using `ggplot2.` The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch6-M01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian Poisson GLM to model the number of coral species. The model is fitted with default (non-informative) priors. Distributions for: A. model intercept; B. slope for depth; C. slope for reef status; D. interaction of depth and reef status. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
+
+```{r ch6-M01-betas, fig.cap='(ref:ch6-M01-betas)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.M01 <- as.data.frame(M01$marginals.fixed$`(Intercept)`)
+PriorBeta1.M01     <- data.frame(x = PosteriorBeta1.M01[,"x"], 
+                           y = dnorm(PosteriorBeta1.M01[,"x"],0,0))
+Beta1mean.M01 <- M01Betas["(Intercept)", "mean"]
+Beta1lo.M01   <- M01Betas["(Intercept)", "0.025quant"]
+Beta1up.M01   <- M01Betas["(Intercept)", "0.975quant"]
+
+beta1 <- ggplot() +
+  annotate("rect", xmin = Beta1lo.M01, xmax = Beta1up.M01,
+           ymin = 0, ymax = 5.1, fill = "gray88") +
+  geom_line(data = PosteriorBeta1.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta1.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") + ylab("Density") +
+  xlim(4.5,5.3) + ylim(0,5.1) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+       (fill = "white", color = "white", size = 1))
+# beta1
+
+# depth (Beta2)
+PosteriorBeta2.M01 <- as.data.frame(M01$marginals.fixed$`depth`)
+PriorBeta2.M01 <- data.frame(x = PosteriorBeta2.M01[,"x"], 
+                       y = dnorm(PosteriorBeta2.M01[,"x"],0,0.001))
+Beta2mean.M01 <- M01Betas["depth", "mean"]
+Beta2lo.M01   <- M01Betas["depth", "0.025quant"]
+Beta2up.M01   <- M01Betas["depth", "0.975quant"]
+
+beta2 <- ggplot() +
+  annotate("rect", xmin = Beta2lo.M01, xmax = Beta2up.M01,
+         ymin = 0, ymax = 33, fill = "gray88") +
+  geom_line(data = PosteriorBeta2.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta2.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for depth") + ylab("Density") +
+  xlim(-0.18,0.01) + ylim(0,33) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta2mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+       (fill = "white", color = "white", size = 1))
+# beta2
+
+# status (Beta3)
+PosteriorBeta3.M01 <- as.data.frame(M01$marginals.fixed$`statusunprotected`)
+PriorBeta3.M01     <- data.frame(x = PosteriorBeta3.M01[,"x"],
+                           y = dnorm(PosteriorBeta3.M01[,"x"],0,0.001))
+
+Beta3mean.M01 <- M01Betas["statusunprotected", "mean"]
+Beta3lo.M01   <- M01Betas["statusunprotected", "0.025quant"]
+Beta3up.M01   <- M01Betas["statusunprotected", "0.975quant"]
+
+beta3 <- ggplot() +
+  annotate("rect", xmin = Beta3lo.M01, xmax = Beta3up.M01,
+           ymin = 0, ymax = 3.5, fill = "gray88") +
+  geom_line(data = PosteriorBeta3.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta3.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for status") + ylab("Density") +
+  xlim(-1.5,0.25) + ylim(0,3.5) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta3mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+       (fill = "white", color = "white", size = 1))
+# beta3
+
+# 2-way interaction - `depth:statusunprotected`
+PosteriorBeta4.M01 <- as.data.frame(M01$marginals.fixed$`depth:statusunprotected`)
+PriorBeta4.M01     <- data.frame(x = PosteriorBeta4.M01[,"x"],
+                                 y = dnorm(PosteriorBeta4.M01[,"x"],0,0))
+Beta4mean.M01 <- M01Betas["depth:statusunprotected", "mean"]
+Beta4lo.M01   <- M01Betas["depth:statusunprotected", "0.025quant"]
+Beta4up.M01   <- M01Betas["depth:statusunprotected", "0.975quant"]
+
+beta4 <- ggplot() +
+  annotate("rect", xmin = Beta4lo.M01, xmax = Beta4up.M01,
+           ymin = 0, ymax = 22, fill = "gray88") +
+  geom_line(data = PosteriorBeta4.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta4.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Interaction") + ylab("Density") +
+  xlim(-0.05,0.2) + ylim(0,22) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta4mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+       (fill = "white", color = "white", size = 1))
+# beta4
+
+# Combine plots (Fig 6.5)
+ ggarrange(beta1, beta2, beta3, beta4,
+                        labels = c("A", "B", "C", "D"),
+                        ncol = 2, nrow = 2)
+
+```
+
+Figure \@ref(fig:ch6-M01-betas) provides a visual representation of the summary of the fixed effects, and indicates that for model `M01` the betas for the intercept and for depth, protected status and interaction between depth and protected status are statistically important. This figure also shows the non-informative priors make a limited contribution to the posterior distribution. 
+
+#### Model with informative priors {#nb-inf-priors}
+
+As for the default model, we will examine the posterior distributions for the model with informative/weakly informative priors.
+
+`I01Betas <- I01$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]` 
+
+`round(I01Betas, digits = 2)`
+
+```{r ch6-inf-post, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+I01Betas <- I01$summary.fixed[,c("mean", "sd", 
+                                 "0.025quant", 
+                                 "0.975quant")] 
+round(I01Betas, digits = 2)
+```
+
+The qualitative outcome for the informative model is the same as the model with default priors, with all betas statistically important. However, posterior means differ quantitatively from the model with default priors, as do the 95% credible intervals which encompass a narrower range. The posterior distributions can be visualized with `ggplot2`: see the R script associated with this chapter.
+
+(ref:ch6-I01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian Poisson GLM to model the number of coral species. The model is fitted with informative priors. Distributions for: A. model intercept; B. slope for depth; C. slope for reef status; D. interaction of depth and reef status. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
+
+```{r ch6-I01-betas, fig.cap='(ref:ch6-I01-betas)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+PosteriorBeta1.I01 <- as.data.frame(I01$marginals.fixed$`(Intercept)`)
+PriorBeta1.I01     <- data.frame(x = PosteriorBeta1.I01[,"x"], 
+                                 y = dnorm(PosteriorBeta1.I01[,"x"],5,0.5))
+Beta1mean.I01 <- I01Betas["(Intercept)", "mean"]
+Beta1lo.I01   <- I01Betas["(Intercept)", "0.025quant"]
+Beta1up.I01   <- I01Betas["(Intercept)", "0.975quant"]
+
+Ibeta1 <- ggplot() +
+  annotate("rect", xmin = Beta1lo.I01, xmax = Beta1up.I01,
+           ymin = 0, ymax = 5.5, fill = "gray88") +
+  geom_line(data = PosteriorBeta1.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta1.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") + ylab("Density") +
+  xlim(4.4,5.4) + ylim(0,5.5) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta1
+
+# depth (Beta2)
+PosteriorBeta2.I01 <- as.data.frame(I01$marginals.fixed$`depth`)
+PriorBeta2.I01 <- data.frame(x = PosteriorBeta2.I01[,"x"], 
+                             y = dnorm(PosteriorBeta2.I01[,"x"],-0.18, 0.06))
+Beta2mean.I01 <- I01Betas["depth", "mean"]
+Beta2lo.I01   <- I01Betas["depth", "0.025quant"]
+Beta2up.I01   <- I01Betas["depth", "0.975quant"]
+
+Ibeta2 <- ggplot() +
+  annotate("rect", xmin = Beta2lo.I01, xmax = Beta2up.I01,
+           ymin = 0, ymax = 35, fill = "gray88") +
+  geom_line(data = PosteriorBeta2.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta2.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for depth") + ylab("Density") +
+  xlim(-0.2,0.02) + ylim(0,35) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta2mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta2
+
+# status (Beta3)
+PosteriorBeta3.I01 <- as.data.frame(I01$marginals.fixed$`statusunprotected`)
+PriorBeta3.I01     <- data.frame(x = PosteriorBeta3.I01[,"x"],
+                                 y = dnorm(PosteriorBeta3.I01[,"x"],-0.5, 0.25))
+
+Beta3mean.I01 <- I01Betas["statusunprotected", "mean"]
+Beta3lo.I01   <- I01Betas["statusunprotected", "0.025quant"]
+Beta3up.I01   <- I01Betas["statusunprotected", "0.975quant"]
+
+Ibeta3 <- ggplot() +
+  annotate("rect", xmin = Beta3lo.I01, xmax = Beta3up.I01,
+           ymin = 0, ymax = 4, fill = "gray88") +
+  geom_line(data = PosteriorBeta3.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta3.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for status") + ylab("Density") +
+  xlim(-1.5,0.25) + ylim(0,4) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta3mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta3
+
+# 2-way interaction - `depth:statusunprotected`
+PosteriorBeta4.I01 <- as.data.frame(I01$marginals.fixed$`depth:statusunprotected`)
+PriorBeta4.I01     <- data.frame(x = PosteriorBeta4.I01[,"x"],
+                                 y = dnorm(PosteriorBeta4.I01[,"x"],5e-02, 1))
+Beta4mean.I01 <- I01Betas["depth:statusunprotected", "mean"]
+Beta4lo.I01   <- I01Betas["depth:statusunprotected", "0.025quant"]
+Beta4up.I01   <- I01Betas["depth:statusunprotected", "0.975quant"]
+
+Ibeta4 <- ggplot() +
+  annotate("rect", xmin = Beta4lo.I01, xmax = Beta4up.I01,
+           ymin = 0, ymax = 25, fill = "gray88") +
+  geom_line(data = PosteriorBeta4.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta4.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Interaction") + ylab("Density") +
+  xlim(-0.05,0.15) + ylim(0,25) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta4mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta4
+
+# Combine plots
+ggarrange(Ibeta1, Ibeta2, Ibeta3, Ibeta4,
+                        labels = c("A", "B", "C", "D"),
+                          ncol = 2, nrow = 2)
+
+```
+
+Figure \@ref(fig:ch6-I01-betas) indicates that for model I01 the betas for the intercept, depth, reef protected status and interaction between depth and protected status all differ from zero and are statistically important. Note that the priors for depth and protected status are informative; these are based on the comparable previous study by @Waheed_2015. Priors for the model intercept and interaction are weakly informative.
+
+#### Comparison of models with uninformative and informative priors {#nb-prior-comp}
+
+We can compare the results of the Bayesian Poisson GLM with uninformative priors with the same model fitted with informative priors using the DIC.
+
+First extract DICs:
+
+`InfDIC <- c(M01$dic$dic, I01$dic$dic)`
+
+Add weighting:
+
+`InfDIC.weights <- aicw(InfDIC)`
+
+Add names:
+
+`rownames(InfDIC.weights) <- c("default","informative")`
+
+Print DICs:
+
+`dprint.inf <- print (InfDIC.weights, abbrev.names = FALSE)`
+
+Order DICs by fit:
+
+`round(dprint.inf[order(dprint.inf$fit),],2)`
+
+```{r ch6-DIC, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+InfDIC <- c(M01$dic$dic, I01$dic$dic)
+
+# Add weighting
+InfDIC.weights <- aicw(InfDIC)
+
+# Add names
+rownames(InfDIC.weights) <- c("default","informative")
+
+# Print DICs
+dprint.inf <- print (InfDIC.weights,
+                     abbrev.names = FALSE)
+
+# Order DICs by fit
+round(dprint.inf[order(dprint.inf$fit),],2)
+```
+
+These DIC score are essentially the same.
+
+#### Comparison with frequentist Poisson GLM {#nb-freq-comp}
+
+We can compare the results of the Bayesian Poisson GLMs with the same model fitted in a frequentist setting. Execution of the model in a frequentist framework can be performed with:
+
+`Freq <- glm(species ~ depth * status,family = "poisson", data = coral)`
+
+`round(summary(Freq)$coef[,1:4],2)`
+
+```{r ch6-freq_comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+Freq <- glm(species ~ depth * status,
+                      family = "poisson",
+                      data = coral)
+
+round(summary(Freq)$coef[,1:4],2)
+```
+
+We can compare these with the results for the Bayesian models:
+
+Table 6.1: **Comparison of model parameters for frequentist, Bayesian model with non-informative and informative priors of Poisson GLM model to investigate the number of hard coral species on reefs in the Sulu Sea.**
+
+|Model                 |Intercept |depth      |status     |interaction|
+|:---------------------|:--------:|:---------:|:---------:|:---------:|
+|Frequentist           |4.88(0.08)|-0.10(0.01)|-0.73(0.13)|-0.06(0.02)|
+|Bayesian (default)    |4.88(0.08)|-0.10(0.01)|-0.73(0.13)|-0.06(0.02)|
+|Bayesian (informative)|4.89(0.08)|-0.10(0.01)|-0.73(0.13)|-0.06(0.02)|
+
+
+Parameter estimates for the frequentist and Bayesian model with non-informative priors are identical, while results for the Bayesian model with informative priors are only slightly different.
+
+### Conduct model checks
+
+After model fitting and obtaining the posterior distributions, a next step is validation of the model through model checks.
+
+#### Model selection using the Deviance Information Criterion (DIC) {#nb-dic}
+
+We perform a simple model selection by removing covariates and comparing models using the DIC. Start by formulating alternative model:
+
+`f01 <- species ~ depth * status`
+
+`f02 <- species ~ depth + status`
+
+`f03 <- species ~ depth`
+
+`f04 <- species ~ status`
+
+To use DIC we must re-fit the model and specify its calculation using `control.compute`.
+
+Full model with default priors:
+
+`M01.full <- inla(f01, control.compute = list(dic = TRUE), family = "poisson", data = coral)`
+                 
+Model with default priors with interaction dropped:
+
+`M01.1 <- inla(f02, control.compute = list(dic = TRUE), family = "poisson", data = coral)`
+
+Model with default priors with reef status dropped:
+
+`M01.2 <- inla(f03, control.compute = list(dic = TRUE), family = "poisson", data = coral)`
+
+Model with default priors with depth dropped:
+
+`M01.3 <- inla(f04, control.compute = list(dic = TRUE), family = "poisson", data = coral)`
+
+Compare models with the DIC:
+
+`M01dic <- c(M01.full$dic$dic, M01.1$dic$dic,M01.2$dic$dic,    M01.3$dic$dic)`
+           
+`DIC <- cbind(M01dic)`
+
+`rownames(DIC) <- c("full","no inter","no status","no depth")`
+
+`round(DIC,0)`
+
+```{r ch6-nb-dic, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+f01 <- species ~ depth * status
+f02 <- species ~ depth + status
+f03 <- species ~ depth
+f04 <- species ~ status
+
+# To use DIC we must re-run the model and specify its calculation using 
+# 'control.compute'
+
+# Full model with default priors
+M01.full <- inla(f01, 
+                 control.compute = list(dic = TRUE), 
+                 family = "poisson", 
+                 data = coral)
+
+# Model with default priors with interaction dropped
+M01.1 <- inla(f02, 
+                 control.compute = list(dic = TRUE), 
+                 family = "poisson", 
+                 data = coral)
+
+# Model with default priors with reef status dropped
+M01.2 <- inla(f03, 
+                 control.compute = list(dic = TRUE), 
+                 family = "poisson", 
+                 data = coral)
+
+# Model with default priors with depth dropped
+M01.3 <- inla(f04, 
+                 control.compute = list(dic = TRUE), 
+                 family = "poisson", 
+                 data = coral)
+
+
+# Compare models with DIC
+M01dic <- c(M01.full$dic$dic, M01.1$dic$dic, 
+           M01.2$dic$dic,    M01.3$dic$dic)
+DIC <- cbind(M01dic)
+rownames(DIC) <- c("full","no inter","no status","no depth")
+round(DIC,0)
+```
+
+The full model is the best fitting.
+
+We repeat the same process with the model with informative priors (coding is available in the R script associated with this chapter) which gives:
+
+```{r ch6-nb-inf-dic, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+# Now with informative priors
+I01.full <- inla(f01, family = "poisson", data = coral,
+            control.compute = list(dic = TRUE),
+            control.fixed = list(mean.intercept = 5.0,
+                                 prec.intercept = 0.5^(-2),
+                                 mean = list(depth = -0.18,
+                                             statusunprotected = -0.5,
+                                             default = 0.05),
+                                 prec = list(depth = 0.06^(-2),
+                                             statusunprotected = 0.25^(-2),
+                                             default = 1.0^(-2))))
+
+I01.1 <- inla(f02, family = "poisson", data = coral,
+                 control.compute = list(dic = TRUE),
+                 control.fixed = list(mean.intercept = 5.0,
+                                      prec.intercept = 0.5^(-2),
+                                      mean = list(depth = -0.18,
+                                                  statusunprotected = -0.5,
+                                                  default = 0.05),
+                                      prec = list(depth = 0.06^(-2),
+                                                  statusunprotected = 0.25^(-2),
+                                                  default = 1.0^(-2))))
+
+I01.2 <- inla(f03, family = "poisson", data = coral,
+                 control.compute = list(dic = TRUE),
+                 control.fixed = list(mean.intercept = 5.0,
+                                      prec.intercept = 0.5^(-2),
+                                      mean = list(depth = -0.18,
+                                                  statusunprotected = -0.5,
+                                                  default = 0.05),
+                                      prec = list(depth = 0.06^(-2),
+                                                  statusunprotected = 0.25^(-2),
+                                                  default = 1.0^(-2))))
+
+I01.3 <- inla(f04, family = "poisson", data = coral,
+                 control.compute = list(dic = TRUE),
+                 control.fixed = list(mean.intercept = 5.0,
+                                      prec.intercept = 0.5^(-2),
+                                      mean = list(depth = -0.18,
+                                                  statusunprotected = -0.5,
+                                                  default = 0.05),
+                                      prec = list(depth = 0.06^(-2),
+                                                  statusunprotected = 0.25^(-2),
+                                                  default = 1.0^(-2))))
+
+# Compare models with DIC
+I01dic <- c(I01.full$dic$dic, I01.1$dic$dic, 
+            I01.2$dic$dic,    I01.3$dic$dic)
+DIC <- cbind(I01dic)
+rownames(DIC) <- c("full","no inter","no status","no depth")
+round(DIC,0)
+
+```
+
+Which gives the same outcome as the model with default priors. Given the similarity in the models with noninformative and informative priors, for brevity we choose to continue model checks with just the latter model.
+
+#### Dispersion {#nb-disp}
+
+A necessary check with a Poisson GLM is whether it is overdispersed. Dispersion can be assessed by summing the squared Pearson residuals and dividing them by the number of observations minus the degrees of freedom. This value should be close to one. Values above one indicate overdispersion, while values below one indicate underdispersion.
+
+However this approach is rather arbitrary and a better comparison for assessing dispersion is to simulate data from the fitted model and calculate the dispersion for each of the simulated data sets.
+
+In Chapter 5 we implemented the 7-step protocol of @Zuur_2017 to assess dispersion in the Poisson GLM with informative priors. Here we conduct an alternative simulation using the `inlatools` package.
+
+We start by refitting the model with the `config = TRUE` option to permit the simulation of regression parameters:
+
+`I01 <- inla(f01, family = "poisson", data = coral, control. compute = list(config = TRUE, dic = TRUE), control.predictor = list(compute = TRUE), control.fixed = list(mean.intercept = 5.0, prec.intercept = 0.5^(-2), mean = list(depth = -0.18, statusunprotected = -0.5, default = 0.05), prec = list(depth = 0.06^(-2), statusunprotected = 0.25^(-2), default = 1^(-2))))`
+
+We simulate data from the model with `dispersion_check`:
+
+`dis_pois <- dispersion_check(I01)`
+
+Which generates the dispersion value based on the data and a vector of dispersion values for 1000 simulated data sets
+
+The dispersion value for the data is given by:
+
+`round(dis_pois$data,2)`
+
+```{r ch6-nb-disp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+I01 <- inla(f01, family = "poisson", data = coral,
+               control.compute = list(config = TRUE, dic = TRUE),
+             control.predictor = list(compute = TRUE), 
+                 control.fixed = list(mean.intercept = 5.0,
+                                      prec.intercept = 0.5^(-2),
+                                   mean = list(depth = -0.18,
+                                   statusunprotected = -0.5,
+                                             default = 0.05),
+                                   prec = list(depth = 0.06^(-2),
+                                   statusunprotected = 0.25^(-2),
+                                             default = 1^(-2))))
+
+# We simulate data from the model with 'dispersion_check'
+dis_pois <- dispersion_check(I01)
+
+# Which generates the dispersion value based on the data and 
+# a vector of dispersion values for 1000 simulated data sets
+
+# The dispersion value for the data is given by:
+round(dis_pois$data,2)
+
+```
+
+This figure should be close to 1 (<1 underdispersion, >1 overdispersion). However, the value for the model exceeds 1, indicating a problem of overdispersion.
+
+We can plot dispersion values for the simulated data sets (with dispersion value for the data added as a dashed line)
+
+`pois_plot <- ggplot() + geom_density(aes(dis_pois$model)) + geom_vline(xintercept = dis_pois$data, linetype = "dashed") + xlab("Dispersion") + ylab("Density") + xlim(0,2.1) + ylim(0,1.8) + theme(text = element_text(size=13)) + theme(panel.background = element_blank()) + theme(panel. border = element_rect(fill = NA, colour = "black", size = 1)) + theme(strip.background = element_rect (fill = "white", color = "white", size = 1))`
+
+`pois_plot`
+
+(ref:ch6-pois-plot) **Density plot of the dispersion of the simulated data sets. The vertical dashed line shows the dispersion of the original data.**
+
+```{r ch6-pois-plot, fig.cap='(ref:ch6-pois-plot)', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+pois_plot <- ggplot() +
+  geom_density(aes(dis_pois$model)) +
+  geom_vline(xintercept = dis_pois$data, linetype = "dashed") +
+  xlab("Dispersion") + ylab("Density") +
+  xlim(0,2.1) + ylim(0,1.8) +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+pois_plot
+
+```
+
+If the dispersion value for the data (dashed line) in Fig. \@ref(fig:ch6-pois-plot) falls within the distribution of dispersion values for simulated data sets the model is not under- or overdispersed. However, in this case there is clear evidence of overdispersion.
+
+*__Overdispersion__*
+
+Poisson GLMs assume the mean and variance of the response variable are approximately equal. Overdispersion can occur when this assumption is not met; variance in the data is naturally larger than the mean. This situation is termed ‘true overdispersion’. True overdispersion is dealt with by fitting a model to the data such that the variance is greater than the mean in the response variable. 
+
+However, there are other possible causes of overdispersion, which can represent underlying problems with the model. These are:
+
+1.	__Model mis-specification__. There may be key variables, including interactions, that explain a large part of the variance that are missing from the model. Model mis-specification is handled by including additional variables or adding interaction terms to the model.
+
+2.	__Too many zeros in the response variable ('zero inflation')__. If there are too many zeros a zero-inflated (e.g. a zero-inflated Poisson or ZIP model) or zero-adjusted (e.g. a zero-adjusted Poisson or ZAP) model can be used.
+
+3.	__Influential outliers__. The presence of influential observations can be tested by plotting Cook's distance and these can be dropped and the model refitted. Data dropped from the analysis must be reported in your Methods, with a justification.
+
+4.	__Non-independence of the data__. An assumption is that each observation in a dataset is independent of all others. However, there may be an underlying association between some data that results in dependency; e.g. data may have been collected by different scientists, who introduce consistent bias to the data, or data may have been collected in different months, which affects the variance structure of the data. If the source of dependency is known, it can be incorporated into the analysis as a 'random' term in a Generalised Linear Mixed Model (GLMM).
+
+5.	__Wrong link function__. A GLM uses a link function to connect the response variable with the linear part of the model comprising the covariates. Trying an alternative link function to the default may solve the problem of overdispersion.
+
+6.	__Non-linearity in the data__. A GLM assumes the response variable can be modelled as a linear relationship using a link function. However, this approach may not be adequate to capture the non-linear properties of some biological systems. In this case it is necessary to switch to using Generalised Additive Models (GAMs).
+
+As part of model validation, it is necessary to address each of these potential problems. If none prove successful in solving overdispersion, a model with a different error structure can be applied.
+
+To see a full assessment of these steps, see Chapter 8 of [@Smith_etal_2020] with accompanying R script. In the case of the coral data we found no evidence for any of these alternative causes of overdispersion and we will assume that there is true overdispersion in the data; i.e. variance in the data is naturally larger than the mean and a model with a different conditional probability distribution is needed.
+
+#### Bayesian negative binomial GLM {#nbglm-fit}
+
+We will refit model `I01` with a negative binomial distribution for the response variable. The negative binomial distribution is a generalisation of the Poisson that relaxes the restrictive assumption that the variance is equal to the mean. Instead, the variance of a negative binomial GLM is modelled as a function of its mean and a dispersion parameter.
+
+Fitting a negative binomial GLM is readily achieved in INLA by simply altering the model family from `poisson` to `nbinomial`:
+
+`I01.nb <- inla(f01, family = "nbinomial", data = coral, control.  compute = list(config = TRUE, dic = TRUE), control.  predictor = list(compute = TRUE), control.fixed = list(mean.intercept = 5.0, prec.intercept = 0.5^(-2), mean = list(depth = -0.18,  statusunprotected = -0.5, default = 0.05), prec = list(depth = 0.06^(-2), status  unprotected = 0.25^(-2), default = 1^(-2))))`
+
+Then repeat the simulation exercise with the negative binomial GLM:
+
+`dis_nbin <- dispersion_check(I01.nb)`
+
+The dispersion value for the data is given by:
+
+`round(dis_nbin$data,2)`
+
+```{r ch6-nbglm-fit, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Fit the model with negative binomial distribution
+I01.nb <- inla(f01, family = "nbinomial", data = coral,
+            control.compute = list(config = TRUE, dic = TRUE),
+            control.predictor = list(compute = TRUE), 
+            control.fixed = list(mean.intercept = 5.0,
+                                 prec.intercept = 0.5^(-2),
+                                 mean = list(depth = -0.18,
+                                             statusunprotected = -0.5,
+                                             default = 0.05),
+                                 prec = list(depth = 0.06^(-2),
+                                             statusunprotected = 0.25^(-2),
+                                             default = 1^(-2))))
+
+
+# Then repeat simulation exercise
+dis_nbin <- dispersion_check(I01.nb)
+
+# The dispersion value for the data is given by:
+round(dis_nbin$data,2)
+```
+
+This figure should be close to 1, which is the case.
+
+We can also plot the dispersion and compare with the Poisson GLM (R code is available in the R script associated with this chapter):
+
+(ref:ch6-nbglm-plot) **Density plot of the dispersion of the simulated data sets for: A. Poisson model; B. negative binomial model. The vertical dashed line shows the dispersion of the data.**
+
+```{r ch6-nbglm-plot, fig.cap='(ref:ch6-nbglm-plot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+nb_plot <- ggplot() +
+  geom_density(aes(dis_nbin$model)) +
+  geom_vline(xintercept = dis_nbin$data, linetype = "dashed") +
+  xlab("Dispersion") + ylab("") +
+  xlim(0,2.5) + ylim(0,1.8) +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# Combine plots
+
+ggarrange(pois_plot, nb_plot,
+                     labels = c("A", "B"),
+                       ncol = 2, nrow = 1)
+
+```
+
+In Fig. \@ref(fig:ch6-nbglm-plot) the dispersion value for the data (dashed line) fitted with a Poisson distribution (panel A) falls outside the distribution of dispersion values for the simulated data sets, indicating overdispersion, while for the negative binomial distribution (panel B) the dispersion value clearly falls within the distribution of the dispersion values for the simulated data sets. This outcome shows that the implementation of a negative binomial distribution has adequately handled the problem of overdispersion, and this negative binomial model will be used for further model checks.
+
+We can also compare DICs for the Poisson and negative binomial models:
+
+`dic3 <- c(I01$dic$dic, I01.nb$dic$dic)`
+
+`DIC3 <- cbind(dic3)`
+
+`rownames(DIC3) <- c("Poisson","negative binomial")`
+
+`round(DIC3,0)`
+
+```{r ch6-dic-comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+dic3 <- c(I01$dic$dic, I01.nb$dic$dic)
+DIC3 <- cbind(dic3)
+rownames(DIC3) <- c("Poisson","negative binomial")
+round(DIC3,0)
+```
+
+The negative binomial model gives an improved fit to the data.
+
+#### Posterior predictive checks {#nbglm-ppc}
+
+Posterior predictive checks are used to assess whether a model generates realistic predictions by drawing simulated estimates from the joint posterior predictive distribution and comparing them with observed data with a posterior predictive p-value. If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar, whereas if close to 1 it means the model prediction is too high and if close to zero, too low.
+
+See the R script associated with this chapter for estimating and plotting the posterior predictive p-values for the model.
+
+(ref:ch6-nb-ppcplot) **Frequency histogram of the posterior predictive p-values for the Bayesian negative binomial GLM with informative priors to predict coral biodiversity. The vertical dotted line indicates 0.5.**
+
+```{r ch6-nb-ppcplot, fig.cap='(ref:ch6-nb-ppcplot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+I01.pred <- inla(f01, family = "nbinomial", data = coral,
+               control.predictor = list(link = 1,
+                                     compute = TRUE),
+               control.compute = list(dic = TRUE, 
+                                      cpo = TRUE),
+               control.fixed = list(mean.intercept = 5.0,
+                                    prec.intercept = 0.5^(-2),
+                                 mean = list(depth = -0.18,
+                                 statusunprotected = -0.5,
+                                           default = 0.05),
+                                 prec = list(depth = 0.06^(-2),
+                                 statusunprotected = 0.25^(-2),
+                                           default = 1^(-2))))
+
+ppp <- vector(mode = "numeric", length = nrow(coral))
+for(i in (1:nrow(coral))) {
+  ppp[i] <- inla.pmarginal(q = coral$species[i],
+                    marginal = I01.pred$marginals.fitted.values[[i]])
+}
+
+# Fig. 6.9
+ggplot() +
+  geom_histogram(aes(ppp), binwidth = 0.09, 
+             colour = "black", fill = "gray88") +
+  xlab("Posterior predictive p-values") +
+  ylab("Frequency") +
+  geom_vline(xintercept = 0.5, linetype = "dotted") +
+  theme(text = element_text(size=15)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+       (fill = "white", color = "white", size = 1))
+```
+
+The frequency histogram of posterior predictive p-values in Fig. \@ref(fig:ch6-nb-ppcplot) shows that most values are close to zero or 1, with few close to 0.5, indicating the model check has not been satisfied. We will proceed with further model checks.
+
+#### Cross-validation model checking {#nbglm-cv}
+
+We use leave-one-out cross validation to examine how well the model is able to generalise to new data. To ensure there are no potential numerical problems in estimating CPO or PIT for a given model, we first run the following check:
+
+`sum(I01.pred$cpo$failure)`
+
+`r sum(I01.pred$cpo$failure)`
+
+An outcome of zero indicates no problems with the computation of CPO or PIT. 
+
+A uniform distribution of PIT values indicates whether the predictive distributions match the data (see the R script associated with this chapter).
+
+(ref:ch6-PIT) **A. Frequency histogram; B. Uniform Q-Q plot with confidence bands (shaded gray), for cross-validated PIT values for the Bayesian negative binomial GLM with informative priors.**
+
+```{r ch6-PIT, fig.cap='(ref:ch6-PIT)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+#Extract pit values
+PIT <- (I01.pred$cpo$pit)
+
+#And plot
+Pit1 <- ggplot() +
+  geom_histogram(aes(PIT), binwidth = 0.11, 
+             colour = "black", fill = "gray88") +
+  xlab("PIT") + ylab("Frequency") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+      (fill = "white", color = "white", size = 1))
+# Pit1
+
+Pit2 <- ggplot(mapping = aes(sample = I01.pred$cpo$pit)) +
+      stat_qq_band(distribution = "unif", alpha = 0.5) +
+      stat_qq_line(distribution = "unif", qprobs = c(0.1, 0.9)) +
+      stat_qq_point(distribution = "unif", size = 2.5, alpha = 0.7) +
+      xlab("Theoretical quantiles") + ylab("Sample quantiles") +
+      theme(text = element_text(size=13)) +
+      theme(panel.background = element_blank()) +
+      theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+      theme(strip.background = element_rect
+           (fill = "white", color = "white", size = 1))
+# Pit2
+
+# Combine plots
+ggarrange(Pit1, Pit2,
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+```
+
+The frequency histogram of PIT values in Fig. \@ref(fig:ch6-PIT)A shows that the distribution is broadly uniform. This conclusion is supported by the Q-Q plot (Fig. \@ref(fig:ch6-PIT)B), which shows that the PIT values match a uniform distribution.
+
+#### Bayesian residuals analysis {#nbglm-resids}
+
+The homogeneity of residual variance can be assessed visually by plotting model residual variance against fitted values as well as each variable in the model (see the R script associated with this chapter).
+
+(ref:ch6-nb-resids) **Bayesian residuals plotted against: A. fitted values; B. water depth; and C. reef protected status, to assess homogeneity of residual variance.**
+
+```{r ch6-nb-resids, fig.cap='(ref:ch6-nb-resids)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+Fit <- I01.pred$summary.fitted.values[, "mean"]
+
+# Calculate residuals
+Res <- coral$species - Fit
+ResPlot <- cbind.data.frame(Fit,Res,coral$depth,coral$status)
+
+# Plot residuals against fitted
+Res1 <- ggplot(ResPlot, aes(x=Fit, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("Bayesian residuals") + xlab("Fitted values") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# And plot residuals against variables in the model
+Res2 <- ggplot(ResPlot, aes(x=coral$depth, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Depth (m)") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+Res3 <- ggplot(ResPlot, aes(x=coral$status, y=Res)) + 
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Reef status") +
+  theme(text = element_text(size=13)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(Res1, Res2, Res3,
+                    labels = c("A", "B", "C"),
+                    ncol = 3, nrow = 1)
+
+```
+
+Ideally, the distribution of residuals around zero should be random along the horizontal axis, and in the case of a categorical variable (Fig. \@ref(fig:ch6-nb-resids)C) the median of a boxplot of residuals should be approximately zero. For Figs. \@ref(fig:ch6-nb-resids)A-C the pattern of residuals is acceptable.
+
+#### Prior sensitivity analysis {#nb-sens}
+
+A final model check is to examine prior distributions through a sensitivity analysis that involves systematically changing prior distributions and examining the magnitude of outcome for the posterior distribution. 
+
+In Chapters \@ref(gen-model) and \@ref(pois-glm) we investigated prior sensitivity by increasing and decreasing priors on the fixed effects by 20% and examined the outcome for the posterior mean (see the R script associated with these chapters). In the case of the coral reef data, plots of the posterior distributions for the model fixed effects similarly indicate that the posterior distributions are robust to changes in the priors placed on them (analysis not shown).
+
+#### Conclusions from model checks {#nb-checkconc}
+
+The Poisson GLM with informative priors showed a comparable goodness-of-fit to that of the model with default priors. An analysis of model dispersion identified a problem with overdispersion, though this problem was corrected by fitting a negative binomial GLM. Leave-one-out cross validation indicated that the predictive distributions matched the data well and residuals plots failed to highlight any systematic problems with model fit. Prior sensitivity analysis demonstrated that the model was robust to changes in prior distributions of fixed effects. Overall, then, the Bayesian negative binomial GLM with informative priors provides a reasonable representation of the data.
+
+### Interpret and present model output	{#nb-present}
+
+Specification of the Bayesian negative binomial GLM using mathematical notation takes the form:
+
+$Species_{i}$ ~ $NegBin(\mu_{i}, k)$
+
+_E_($Species_{i}$) = $\mu_i$   and   var($Species_{i}$) = $\mu_i$ + ($\mu_i^2 / k$)
+
+_log_$\mu_i$ = $\eta_i$
+
+$\eta_i$ = $\beta_1$ + $\beta_2$ x $Depth_{i}$ + $\beta_3$ x $Status_{i}$ + $\beta_4$ x $Depth_{i} : Status_{i}$
+
+Where $Species_{i}$ is the number of scleractinian coral species at sample site _i_ assuming a negative binomial distribution with mean $\mu_i$ and variance $\mu_i$ + ($\mu_i^2 / k$). The parameter _k_ is the dispersion parameter and deals with the extra variance in the data. $Depth_{i}$ is water depth for sample site _i_, and $Status_{i}$ is the protected status of the reef at sample site _i._ Note that the model has a log link function
+
+The numerical output of the model is:
+
+```{r ch6-nb-final, comment="", echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+Final <- inla(f01, family = "nbinomial", data = coral,
+          control.compute = list(config = TRUE),
+        control.predictor = list(compute=TRUE), 
+            control.fixed = list(mean.intercept = 5.0,
+                                 prec.intercept = 0.5^(-2),
+                              mean = list(depth = -0.18,
+                              statusunprotected = -0.5,
+                                        default = 0.05),
+                              prec = list(depth = 0.06^(-2),
+                              statusunprotected = 0.25^(-2),
+                                        default = 1^(-2))))
+
+# Posterior mean values and 95% CI for fixed effects
+BetasFinal <- Final$summary.fixed[,c("mean", "sd", 
+                                     "0.025quant", 
+                                     "0.975quant")] 
+round(BetasFinal, digits = 2)
+```
+
+These results can be more formally presented in the following way:
+
+Table 6.2: **Posterior mean estimates for number of hard coral species at sites in the Sulu Sea as a function of water depth (m), protected status, and their interaction, modelled using a negative binomial GLM fitted with INLA. CrI are the Bayesian 95% credible intervals.**
+
+|Model parameter      |Posterior mean|Lower 95% CrI|Upper 95% CrI|
+|:--------------------|:------------:|:-----------:|:-----------:|
+|Intercept            |4.90          |4.69         |5.12         |
+|Depth                |-0.10         |-0.13        |-0.07        |
+|Status (unprotected) |-0.69         |-0.98        |-0.41        |
+|Depth x Status       |0.06          |0.01         |0.10         |
+
+
+These results (Table 6.2) show a statistically important negative effect of depth and reef protected status on coral biodiversity as well as an interaction between covariates.
+
+### Visualise the results
+
+The negative binomial GLM can be visualised to assist with understanding the model outcomes. Coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch6-final-plot) **Posterior mean number of coral species from sampling sites in the Sulu Sea as a function of water depth (m) and protected status, modelled using a negative binomial GLM fitted with INLA. Shaded areas are Bayesian 95% credible intervals. Black points are observed data for different sampling sites.**
+
+```{r ch6-final-plot, fig.cap='(ref:ch6-final-plot)', fig.dim=c(6, 5), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+MyData <- expand.grid(
+  status = c("protected", "unprotected"),
+  depth = seq(from = min(coral$depth), 
+              to = max(coral$depth), length = 50))
+
+# 2. Make a design matrix
+Xmat <- model.matrix(~ depth * status, data = MyData)
+Xmat <- as.data.frame(Xmat)
+
+lcb <- inla.make.lincombs(Xmat)
+
+# Re-run the model in R-INLA using the combined data set, ensuring
+# that `compute = TRUE` is selected in the `control.predictor` argument
+Final.Pred <- inla(f01, family = "nbinomial", data = coral,
+              lincomb = lcb,
+              control.inla = list(lincomb.derived.only = TRUE),
+              control.predictor = list(compute = TRUE), 
+              control.fixed = list(mean.intercept = 5.0,
+                                   prec.intercept = 0.5^(-2),
+                                mean = list(depth = -0.18,
+                                statusunprotected = -0.5,
+                                          default = 0.05),
+                                prec = list(depth = 0.06^(-2),
+                                statusunprotected = 0.25^(-2),
+                                          default = 1^(-2))))
+
+# Run loop to get mu, selo and seup
+Pred.marg <- Final.Pred$marginals.lincomb.derived
+
+for (i in 1:nrow(MyData)){
+  MyData$mu[i]  <- inla.emarginal(exp, Pred.marg[[i]])
+  lo.up <- inla.qmarginal(c(0.025, 0.975), 
+                          inla.tmarginal(exp, Pred.marg[[i]]))
+  MyData$selo[i] <- lo.up[1]
+  MyData$seup[i] <- lo.up[2]    	
+}               
+
+# Labels
+label_status <- c("protected" = "Protected reef", 
+                  "unprotected" = "Unprotected reef")
+
+# Plot
+ggplot() + 
+  geom_jitter(data = coral, aes(y = species, x = depth),
+              shape = 19, size = 2.5, height = 1, 
+              width = 0.1, alpha = 0.7) +
+  xlab("Water depth (m)") + 
+  ylab("Posterior mean number of coral species") +
+  ylim(30,120) + xlim(2,10.5) + 
+  theme(text = element_text(size = 14)) + 
+  theme(panel.background = element_blank()) + 
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) + 
+  theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) +
+  geom_line(data = MyData, aes(x = depth, y = mu), size = 1) +
+  geom_ribbon(data = MyData, aes(x = depth, 
+                                 ymax = seup, ymin = selo), alpha = 0.5) +
+    theme(strip.text = element_text(size = 14, face="italic")) +
+  facet_grid(. ~ status, scales = "fixed", space = "fixed", 
+                    labeller=labeller (status = label_status))
+```
+
+The results of this statistical analysis can be summarised as follows:
+
+_A  negative binomial GLM was fitted to data using Bayesian inference with INLA for the number of scleractinian coral species  from 32 sampling 100 m$^2$ sites in the Sulu Sea. In the best-fitting model, which included informative and weakly informative priors on fixed effects, there was a statistically important negative effect of water depth on number of coral species. There was also a statistically important effect of protected status, with fewer coral species in unprotected sites. Finally, there was an interaction between depth and protected status, with a steeper negative relationship between water depth and number of coral species at protected sites (Table 6.2), Fig. \@ref(fig:ch6-final-plot). The model was fitted using informative and weakly informative priors on the fixed effects, obtained from a separate study of coral biodiversity from the same biogeographic region @Waheed_2015._
+
+## Conclusions
+
+In this analysis we identified a problem with overdispersion in a Poisson GLM. Overdispersion in the Poisson model was treated as true overdispersion, with a GLM fitted with a negative binomial distribution, which successfully modelled the extra variance in the data. The goodness of fit of the negative binomial model, measured by the DIC, was also superior to the Poisson GLM

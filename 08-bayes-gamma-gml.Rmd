@@ -1,0 +1,1164 @@
+# Bayesian gamma GLM {#gamma-glm}
+
+Gaussian GLMs assume that the response variable follows a normal statistical distribution. While we commonly model continuous response variables using a Gaussian GLM (Chapter 4), there are limitations to this approach. An assumption in fitting data to a Gaussian distribution is that variation around the mean is symmetric and that the data can be summarised by the arithmetic mean and standard deviation. However, the assumption that continuous biological data are necessarily drawn from a Gaussian distribution may not always be justified; some types of data are typically not symmetric. Another problem is that a normal statistical distribution can generate negative predictions. For some continuous data that ostensibly appear normally distributed, such as body size, negative values are clearly impossible. 
+
+A solution to modelling continuous data that deviate from normality is to transform data. A more satisfactory alternative is to use a distribution that better represents the data. One alternative is the gamma distribution. This distribution can be used to model continuous variables that are strictly positive (i.e. no zeros or negative values) and positively skewed. The gamma distribution is appropriate for biological and ecological data such as body size, pollutant concentrations, or time intervals between (non-random) events.
+
+## Common seal dive duration
+
+The common (harbour) seal (_Phoca vitulina_) is a widespread phocid seal found throughout cold temperate and Arctic waters of the northern hemisphere. They are protected in the UK, which supports approximately 40% of the world’s population of this species. Common seals are generalist predators in coastal waters. They prey chiefly on fish, cephalopods and crustaceans and are capable of extended foraging dives lasting up to 30 minutes.
+
+Data were collected on the maximum dive duration for 29 radio-tagged adult common seals from a population in the Moray Firth on the East coast of Scotland. All seals in the study were of known age, sex, total body length, and lean mass. Lean mass was calculated by deducting blubber mass (estimated from blubber thickness using ultrasound measurements) from total mass.
+
+*__Import data__*
+
+```{r ch8-libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)  
+library(ggplot2)
+library(GGally)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(car)
+library(devtools)
+library(ggpubr)
+library(qqplotr)
+library(geiger)
+library(gridExtra)
+library(rlang)
+library(INLA)
+library(brinla)
+library(inlatools)
+```
+
+
+The data are saved in a comma-separated values (CSV) file `seal.csv` and are imported  into a dataframe in R using:
+
+`seal <- read_csv(file = "seal.csv")`
+
+```{r ch8-csv-seal, echo=FALSE, warning=FALSE, message=FALSE}
+seal <- read_csv(file = "seal.csv")
+```
+
+Start by inspecting the dataframe:
+
+`str(seal)`
+
+```{r ch8-str-seal, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(seal, vec.len=2)
+```
+
+The dataframe comprises `r nrow(seal)` observations of `r ncol(seal)` variables. Each row in the dataframe represents a different radio-tagged common seal. Each animal has a unique identification code (`id`). `Sex` is a factor; i.e. a categorical variable, though note that it has been coded numerically in the dataframe (1 = male, 2 = female). Seal age (`age`) in years, lean mass (kg) (`lean_mass`), and maximum dive duration (sec.) (`div_dur`) are all continuous covariates. Maximum dive duration is the response variable that we will model.
+
+## Steps in fitting a Bayesian GLM {#gamma-glm-steps}
+
+We will following the 9 steps to fitting a Bayesian GLM:
+
+_1. State the question_
+
+_2. Perform data exploration_
+
+_3. Select a statistical model_
+
+_4. Specify and justify a prior distribution on parameters_
+
+_5. Fit the model_
+
+_6. Obtain the posterior distribution_
+
+_7. Conduct model checks_
+
+_8. Interpret and present model output_
+
+_9. Visualise the results_
+
+### State the question {#seal-question}
+
+This study was designed to understand which variables predicted dive duration in common seals. Specifically, the aims of the study were to test whether common seal dive duration was predicted by: 1. lean body mass; 2. age; 3. sex. Based on previous research on elephant seals (_Mirounga_ spp.) and Weddell seals (_Leptonychotes weddellii_), our predictions were that larger individuals would show greater maximum dive duration, as would younger individuals. A further prediction was that males would exhibit greater dive duration than females.
+
+Consequently there are three specific predictions to test:
+
+1. A positive association between lean body mass and maximum dive duration.
+
+2. A negative association between seal age and maximum dive duration.
+
+3. An association between maximum dive duration and sex, with males showing a greater maximum dive duration than females.
+
+### Data exploration {#gamma-eda}
+
+We start by conducting a data exploration to identify any potential problems with the data. First check for missing data.
+
+`colSums(is.na(seal))`
+```{r ch8-nas, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+colSums(is.na(seal))
+```
+
+No missing data.
+
+#### Outliers
+
+Outliers in the data can identified visually using multi-panel Cleveland dotplots The code for this plot is available in the R script associated with this chapter.
+
+(ref:ch8-dotplot) **Dotplots of seal age (years) lean mass (kg) and dive duration (sec.) of common seals. Data are arranged by the order they appear in the dataframe.**
+
+```{r ch8-dotplot, fig.cap='(ref:ch8-dotplot)', fig.dim=c(6, 4), fig.align='center', cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+seal <- seal %>%
+  mutate(order = seq(1:nrow(seal)))
+
+# Set preferred theme
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                  color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+#Write function
+multi_dotplot <- function(filename, Xvar, Yvar){
+  filename %>% 
+    ggplot(aes(x = {{Xvar}})) +
+    geom_point(aes(y = {{Yvar}})) +
+    theme_bw() +
+    My_theme +
+    coord_flip() +
+    labs(x = "Order of Data")
+  
+}
+
+#CHOOSE THE VARIABLE FOR EACH PLOT AND APPLY FUNCTION
+p1 <- multi_dotplot(seal, order, age) 
+p2 <- multi_dotplot(seal, order, lean_mass) 
+p3 <- multi_dotplot(seal, order, dive_dur)
+
+#CREATE GRID
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+There are no obvious outliers in Fig. \@ref(fig:ch8-dotplot)
+
+#### Distribution of the dependent variable {#gamma-dist}
+
+The distribution of the dependent variable will inform selection of the appropriate statistical model to use. Here we visualise seal dive duration with a density plot using the `geom_density()` function from the `ggplot2` package. The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch8-freqdens) **Density plot of common seal dive duration for 29 individuals.**
+
+```{r ch8-freqdens, fig.cap='Density plot of common seal dive duration for 29 individuals.', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+seal %>% 
+  ggplot(aes(dive_dur)) +
+  geom_density() +
+  xlab("Dive duration (sec.)") + ylab("Density") +
+  xlim(500,1500) +
+  My_theme +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+
+```
+
+The density plot of the dependent variable (Fig. \@ref(fig:ch8-freqdens)) shows a distribution with a pronounced positive skew. 
+
+#### Balance of categorical variables {#gamma-balance}
+
+Because sex has been coded numerically, we will re-assign it as a factor:
+
+`seal$fSex <- factor(seal$sex)`
+
+For clarity we can also reassign ‘1’ as male and ‘2’ as female:
+
+`seal$fSex <- fct_recode(seal$fSex, Male = "1", Female = "2")`
+
+We then examine the balance of this variable:
+
+`table(seal$fSex)`
+
+```{r ch8-factors, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+seal$fSex <- factor(seal$sex)
+seal$fSex <- fct_recode(seal$fSex, Male = "1", Female = "2")
+table(seal$fSex)
+```
+
+The balance of this categorical variable is acceptable.
+
+#### Multicollinearity among covariates {#gamma-collin}
+
+Here we examine the relationships among model covariates using the `ggpairs()` function from the `GGally` library.
+
+We first create an object comprising the variables of interest, then plot:
+
+`seal %>% ggpairs(columns = c("fSex", "age", "lean_mass"), ggplot2::aes(colour=fSex, alpha = 0.8))`
+
+(ref:ch8-ggpairs) **Plot matrix of common seal dive duration (sec.) split by sex. showing frequency plots, boxplots, frequency histograms, and frequency polygons.**
+
+```{r ch8-ggpairs, fig.cap='(ref:ch8-ggpairs)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+seal %>% 
+    ggpairs(columns = c("fSex", "age", "lean_mass"), aes(colour=fSex, alpha = 0.8), lower = list(combo = wrap("facethist", binwidth = 15))) + My_theme
+
+```
+
+The plot matrix in Fig. \@ref(fig:ch8-ggpairs) indicates a weak correlation of age and lean mass for both sexes.
+
+We will calculate a variance inflation factor (VIF) for each variable. The VIF is an estimate of the proportion of variance in one predictor explained by all the other predictors in the model. A VIF of 1 indicates no collinearity. VIF values above 1 indicate increasing degrees of collinearity. VIF values exceeding 3 are considered problematic.
+
+The VIF for a model can be estimated using the `vif()` function from the `car` package:
+
+`round(vif(gamma1 <- glm(dive_dur ~ lean_mass + age + fSex, family = Gamma(link = log), data = seal)),2)`
+
+```{r ch8-vifs, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+round(vif(gamma1 <- glm(dive_dur ~ lean_mass + age + fSex,
+                                   family = Gamma(link = log),
+                                   data = seal)),2)
+```
+
+The estimated VIFs are all <3, so we have no problem with multicollinearity.
+
+#### Zeros in the response variable {#gamma-zeros}
+
+The number of zeros in the response variable can be calculated with:
+
+`sum(seal$dive_dur == 0)`
+
+`r sum(seal$dive_dur == 0)`
+
+There are no zeros in the response variable (and logically dive duration cannot be for zero seconds). 
+
+#### Relationships among dependent and independent variables {#gamma-rels}
+
+Visual inspection of the data can illustrate whether relationships are linear or non-linear and whether there are interactions between covariates. See the coding for these plots in the R script associated with this chapter.
+
+(ref:ch8-scatter) **Multipanel scatterplot of common seal dive duration (secs.) against lean mass (kg) and age (years)  for males and females, with a line of best fit plotted.**
+
+```{r ch8-scatter, fig.cap='(ref:ch8-scatter)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+mass_plot <- seal %>% 
+  ggplot() +
+  geom_point(aes(y = dive_dur, x = lean_mass, size = 1,
+                 alpha = 0.8)) +
+  geom_smooth(method = "lm", se = FALSE, 
+              aes(y = dive_dur, x = lean_mass), colour = "black") + 
+  xlab("Lean mass (kg)") + ylab("Dive duration (sec.)") +
+  xlim(58,122) + ylim(700,1400) +
+  theme(text = element_text(size=15))  +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1)) +
+  facet_grid(. ~ fSex,
+             scales = "fixed", space = "fixed") +
+  theme(strip.text = element_text(size = 12, face="italic")) +
+  theme(legend.position = "none")
+
+age_plot <- seal %>% 
+  ggplot() +
+  geom_point(aes(y = dive_dur, x = age, size = 1,
+                 alpha = 0.8)) +
+  geom_smooth(method = "lm", se = FALSE, 
+              aes(y = dive_dur, x = age), colour = "black") + 
+  xlab("Age (years)") + ylab("") +
+  xlim(4,12) + ylim(700,1400) +
+  theme(text = element_text(size=15))  +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1)) +
+  facet_grid(. ~ fSex, 
+             scales = "fixed", space = "fixed") +
+  theme(strip.text = element_text(size = 12, face="italic")) +
+  theme(legend.position = "none")
+
+ggarrange(mass_plot, age_plot,
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+
+```
+
+The plot of the data in Fig. \@ref(fig:ch8-scatter) does not suggest non-linear patterns in the data. Fitted lines for the relationship between dive duration and lean mass and age suggest positive relationships for both sexes, though we should also note that lean mass and age are weakly correlated. There is no clear evidence of an interaction of sex and lean mass or age. Given the patterns in these data, inclusion of an interaction term in a model is not justified.
+
+#### Independence of response variable {#gamma-indep}
+
+A critical assumption for a GLM is that each observation in a dataset is independent of all others. For some data this assumption is difficult to confirm but can be reduced by careful sampling. Strictly randomly collected samples will tend to be independent.
+
+For these data common seals were selected and tagged at random. The research was conducted by an experienced group of scientists with specialist knowledge of the species, a good understanding of statistics and ecological survey design, and clear research aims. In this case, we can assume that data were collected in a way to ensure their independence.
+
+### Selection of a statistical model {#gamma-select}
+
+The response variable is strictly positive (no zeros, no negative values) and positively skewed. Rather than attempt to correct the non-normality and skewness in the data with a transformation and fit the model as a Gaussian GLM, an alternative approach is to model the data with a gamma distribution and a log link function. Three covariates will be included in the model as predictors of dive duration; lean mass (continuous), age (continuous) and sex (categorical, with two levels).
+
+### Specification of priors {#gamma-prior-spec}
+
+There are no previous studies comparable to this one on common seals to provide priors and a pilot study was not conducted. However, there have been a number of studies on related species, particularly elephant seals (_Mirounga_ spp.) and Weddell seals (_Leptonychotes weddellii_). Consequently, our prior distributions will be weakly informative with the predictions that larger and younger individuals will show a longer maximum dive duration, and males will show greater dive duration than females.
+
+#### Priors on the fixed effects {#gamma-priors-fixed}
+
+Non-informative (default) priors were put on the fixed effects for model M01, which were:  
+
+$\beta intercept$ ~ _N_(0, 0) ($\tau$ = 0)
+
+$\beta mass$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta age$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta fSex$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+Weakly informative priors based on previous studies were specified for model I01 as:
+
+$\beta intercept$ ~ _N_(5, 0.25) ($\tau$ = 0.04)
+
+$\beta mass$ ~ _N_(0.01, 0.0025) ($\tau$ = 400)
+
+$\beta age$ ~ _N_(-0.01, 0.0025) ($\tau$ = 400)
+
+$\beta fSex$ ~ _N_(-0.1, 0.25) ($\tau$ = 4)
+
+We assumed a weak positive effect of lean body mass of 0.01, with $\sigma$ = 0.05. For age we assumed the same values, but in this case the relationship was predicted to be negative. For the categorical variable sex, we assumed a weak negative effect of females in comparison with males, based on research on other seal species, of -0.1, with $\sigma$ = 0.5. For the model intercept, we assumed a low positive value of 5 s ($\sigma$ = 0.5).
+
+#### Priors on the hyperparameter {#gamma-hyper}
+
+The default hyperparameter is a diffuse gamma distribution: 
+
+precision ~ loggamma(1, 10) ($\tau$ = 0.01)
+
+For the model with informative priors we will use an informative prior on the hyperparameter.
+
+We first obtain the precision parameter phi ($\phi$) from model `M01`:
+
+`phi <- M01$summary.hyperpar["Precision parameter for the Gamma observations", "mean"]`
+
+```{r ch8-phi, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M01 <- inla(dive_dur ~ lean_mass + age + fSex,
+                       family = "gamma", data = seal,
+                       control.compute = list(dic = TRUE))
+
+phi <- M01$summary.hyperpar["Precision parameter for the Gamma observations", "mean"]
+```
+
+Internally, INLA uses $\phi$ = _exp_($\theta$). So:
+
+`round(log(phi),2)`
+
+`r round(log(phi),2)`
+
+So, the informative prior on the hyperparameter is designated as `r round(log(phi),2)` with a large variance (low precision) of 1000: 
+
+precision ~ loggamma(5.43, 1000) ($\tau$ = 0.001)
+
+### Fit the model {#gamma-fit-model}
+
+We fit the two Bayesian gamma GLMs using INLA, one with default priors (`M01`) and the second with weakly informative priors on the fixed effects, and hyperparameter (`I01`).
+
+Model M01 is fitted as:
+
+`M01 <- inla(dive_dur ~ lean_mass + age + fSex, family = "gamma", data = seal, control.compute = list(dic = TRUE))`
+
+The model with informative priors is fitted as:
+
+`I01 <- inla(dive_dur ~ lean_mass + age + fSex, data = seal, family = "gamma", control.compute = list(dic = TRUE), control.family = list(hyper = list(prec = list(prior = "loggamma", param = c(5.43, 31.6^(-2))))), control.fixed = list(mean.intercept = 5, prec.intercept = 5^(-2), mean = list(lean_mass = 0.01, age = -0.01, fSexFemale = -0.1), prec = list(lean_mass = 0.05^(-2), age = 0.05^(-2),  fSexFemale = 0.5^(-2))))`
+                                      
+```{r ch8-I01, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+I01 <- inla(dive_dur ~ lean_mass + age + fSex, 
+                       data = seal, family = "gamma",
+                       control.compute = list(dic = TRUE),
+                       control.family = list(hyper =
+                            list(prec = list(prior = "loggamma", 
+                                             param = c(5.43, 31.6^(-2))))),
+              control.fixed = list(mean.intercept = 5,
+                                   prec.intercept = 5^(-2),
+                            mean = list(lean_mass = 0.01, 
+                                              age = -0.01,
+                                       fSexFemale = -0.1), 
+                            prec = list(lean_mass = 0.05^(-2), 
+                                              age = 0.05^(-2),
+                                       fSexFemale = 0.5^(-2)))) 
+```
+
+### Obtain the posterior distribution {#gamma-post-dist}
+
+#### Model with default priors {#gamma-def-priors}
+
+Output for the fixed effects of  M01 can be obtained with:
+
+`M01Betas <- I01$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]` 
+
+`round(M01Betas, digits = 3)`
+
+```{r ch8-def-post, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M01Betas <- I01$summary.fixed[,c("mean", "sd", 
+                                 "0.025quant", 
+                                 "0.975quant")] 
+round(M01Betas, digits = 3)
+```
+
+This reports the posterior mean, standard deviation and 95% credible intervals for the intercept and covariates.
+
+For the model intercept and variables `lean_mass` and `fSexFemale` we have lower and upper 95% credible intervals that do not include zero. In the case of `lean_mass` the effect is positive and for `fSexFemale` negative. The slope for the variable `age` does not differ from zero.
+
+The posterior distributions can be visualized using `ggplot2.` The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch8-M01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian gamma GLM to model maximum dive duration of common seals. The model is fitted with default (non-informative) priors. Distributions for: A. model intercept; B. slope for lean mass; C. slope for age; D. slope for sex. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
+
+```{r ch8-M01-betas, fig.cap='(ref:ch8-M01-betas)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.M01 <- as.data.frame(M01$marginals.fixed$`(Intercept)`)
+PriorBeta1.M01     <- data.frame(x = PosteriorBeta1.M01[,"x"],
+                                 y = dnorm(PosteriorBeta1.M01[,"x"],0,0))
+Beta1mean.M01 <- M01Betas["(Intercept)", "mean"]
+Beta1lo.M01   <- M01Betas["(Intercept)", "0.025quant"]
+Beta1up.M01   <- M01Betas["(Intercept)", "0.975quant"]
+
+beta1 <- ggplot() +
+  annotate("rect", xmin = Beta1lo.M01, xmax = Beta1up.M01,
+           ymin = 0, ymax = 6, fill = "gray88") +
+  geom_line(data = PosteriorBeta1.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta1.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") + ylab("Density") +
+  xlim(5.8,6.5) + ylim(0,6) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# beta1
+
+# lean mass (Beta2)
+PosteriorBeta2.M01 <- as.data.frame(M01$marginals.fixed$`lean_mass`)
+PriorBeta2.M01 <- data.frame(x = PosteriorBeta2.M01[,"x"], 
+                  y = dnorm(PosteriorBeta2.M01[,"x"],0,31.6))
+Beta2mean.M01 <- M01Betas["lean_mass", "mean"]
+Beta2lo.M01   <- M01Betas["lean_mass", "0.025quant"]
+Beta2up.M01   <- M01Betas["lean_mass", "0.975quant"]
+
+beta2 <- ggplot() +
+  annotate("rect", xmin = Beta2lo.M01, xmax = Beta2up.M01,
+           ymin = 0, ymax = 400, fill = "gray88") +
+  geom_line(data = PosteriorBeta2.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta2.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for lean mass") + ylab("Density") +
+  xlim(0.0025,0.015) + ylim(0,400) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta2mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# beta2
+
+# age (Beta3)
+PosteriorBeta3.M01 <- as.data.frame(M01$marginals.fixed$`age`)
+PriorBeta3.M01     <- data.frame(x = PosteriorBeta3.M01[,"x"],
+                                 y = dnorm(PosteriorBeta3.M01[,"x"],0,31.6))
+Beta3mean.M01 <- M01Betas["age", "mean"]
+Beta3lo.M01   <- M01Betas["age", "0.025quant"]
+Beta3up.M01   <- M01Betas["age", "0.975quant"]
+
+beta3 <- ggplot() +
+  annotate("rect", xmin = Beta3lo.M01, xmax = Beta3up.M01,
+           ymin = 0, ymax = 45, fill = "gray88") +
+  geom_line(data = PosteriorBeta3.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta3.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for age") + ylab("Density") +
+  xlim(-0.06,0.06) + ylim(0,45) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta3mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# beta3
+
+# fSexFemale (beta4)
+PosteriorBeta4.M01 <- as.data.frame(M01$marginals.fixed$`fSexFemale`)
+PriorBeta4.M01     <- data.frame(x = PosteriorBeta4.M01[,"x"],
+                                 y = dnorm(PosteriorBeta4.M01[,"x"],0,31.6))
+Beta4mean.M01 <- M01Betas["fSexFemale", "mean"]
+Beta4lo.M01   <- M01Betas["fSexFemale", "0.025quant"]
+Beta4up.M01   <- M01Betas["fSexFemale", "0.975quant"]
+
+beta4 <- ggplot() +
+  annotate("rect", xmin = Beta4lo.M01, xmax = Beta4up.M01,
+           ymin = 0, ymax = 16, fill = "gray88") +
+  geom_line(data = PosteriorBeta4.M01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta4.M01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Sex (female)") + ylab("Density") +
+  xlim(-0.2,0.075) + ylim(0,16) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta4mean.M01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# beta4
+
+# Combine plots (Fig 8.5)
+ggarrange(beta1, beta2, beta3, beta4,
+                        labels = c("A", "B", "C", "D"),
+                        ncol = 2, nrow = 2)
+```
+
+Figure \@ref(fig:ch8-M01-betas) provides a visual summary of the fixed effects, for model `M01` showing the betas for the intercept, lean mass and sex are statistically important.
+
+Code to plot the posterior distributions for the precision and dispersion of the model hyperparameter is available in the R script associated with this chapter.
+
+#### Model with informative priors {#gamma-inf-priors}
+
+We obtain the posterior distributions for the model:
+
+`I01Betas <- I01$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")] `
+
+`round(I01Betas, digits = 3)`
+
+```{r ch8-inf-post, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+I01Betas <- I01$summary.fixed[,c("mean", "sd", 
+                                 "0.025quant", 
+                                 "0.975quant")] 
+round(I01Betas, digits = 3)
+```
+
+Like the default model, the model intercept and variables `lean_mass` and `fSexFemale` have lower and upper 95% credible intervals that do not include zero. In contrast, the slope for the effect of seal age does not differ from zero.
+
+(ref:ch8-I01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian gamma GLM to model maximum dive duration of common seals. The model is fitted with informative priors. Distributions for: A. model intercept; B. slope for lean mass; C. slope for age; D. slope for sex. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
+
+```{r ch8-I01-betas, fig.cap='(ref:ch8-I01-betas)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.I01 <- as.data.frame(I01$marginals.fixed$`(Intercept)`)
+PriorBeta1.I01     <- data.frame(x = PosteriorBeta1.I01[,"x"],
+                                 y = dnorm(PosteriorBeta1.I01[,"x"],5,5))
+Beta1mean.I01 <- I01Betas["(Intercept)", "mean"]
+Beta1lo.I01   <- I01Betas["(Intercept)", "0.025quant"]
+Beta1up.I01   <- I01Betas["(Intercept)", "0.975quant"]
+
+Ibeta1 <- ggplot() +
+  annotate("rect", xmin = Beta1lo.I01, xmax = Beta1up.I01,
+           ymin = 0, ymax = 7, fill = "gray88") +
+  geom_line(data = PosteriorBeta1.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta1.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") + ylab("Density") +
+  xlim(5.8,6.5) + ylim(0,7) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta1
+
+# mass (Beta2)
+PosteriorBeta2.I01 <- as.data.frame(I01$marginals.fixed$`lean_mass`)
+PriorBeta2.I01 <- data.frame(x = PosteriorBeta2.I01[,"x"], 
+                             y = dnorm(PosteriorBeta2.I01[,"x"],0.01,0.05))
+Beta2mean.I01 <- I01Betas["lean_mass", "mean"]
+Beta2lo.I01   <- I01Betas["lean_mass", "0.025quant"]
+Beta2up.I01   <- I01Betas["lean_mass", "0.975quant"]
+
+Ibeta2 <- ggplot() +
+  annotate("rect", xmin = Beta2lo.I01, xmax = Beta2up.I01,
+           ymin = 0, ymax = 480, fill = "gray88") +
+  geom_line(data = PosteriorBeta2.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta2.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for lean mass") + ylab("Density") +
+  xlim(0.0025,0.014) + ylim(0,480) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta2mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta2
+
+# age (Beta3)
+PosteriorBeta3.I01 <- as.data.frame(I01$marginals.fixed$`age`)
+PriorBeta3.I01     <- data.frame(x = PosteriorBeta3.I01[,"x"],
+                                 y = dnorm(PosteriorBeta3.I01[,"x"],-0.01,0.05))
+
+Beta3mean.I01 <- I01Betas["age", "mean"]
+Beta3lo.I01   <- I01Betas["age", "0.025quant"]
+Beta3up.I01   <- I01Betas["age", "0.975quant"]
+
+Ibeta3 <- ggplot() +
+  annotate("rect", xmin = Beta3lo.I01, xmax = Beta3up.I01,
+           ymin = 0, ymax = 55, fill = "gray88") +
+  geom_line(data = PosteriorBeta3.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta3.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Slope for age") + ylab("Density") +
+  xlim(-0.05,0.05) + ylim(0,58) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta3mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta3
+
+# fSexFemale (beta4)
+PosteriorBeta4.I01 <- as.data.frame(I01$marginals.fixed$`fSexFemale`)
+PriorBeta4.I01     <- data.frame(x = PosteriorBeta4.I01[,"x"],
+                                 y = dnorm(PosteriorBeta4.I01[,"x"],-0.1,0.5))
+Beta4mean.I01 <- I01Betas["fSexFemale", "mean"]
+Beta4lo.I01   <- I01Betas["fSexFemale", "0.025quant"]
+Beta4up.I01   <- I01Betas["fSexFemale", "0.975quant"]
+
+Ibeta4 <- ggplot() +
+  annotate("rect", xmin = Beta4lo.I01, xmax = Beta4up.I01,
+           ymin = 0, ymax = 21, fill = "gray88") +
+  geom_line(data = PosteriorBeta4.I01,
+            aes(y = y, x = x), lwd = 1.2) +
+  geom_line(data = PriorBeta4.I01,
+            aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Sex (female)") + ylab("Density") +
+  xlim(-0.18,0.05) + ylim(0,21) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta4mean.I01, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Ibeta4
+
+# Combine plots (Fig 8.6)
+ggarrange(Ibeta1, Ibeta2, Ibeta3, Ibeta4,
+                        labels = c("A", "B", "C", "D"),
+                        ncol = 2, nrow = 2)
+
+```
+
+Figure \@ref(fig:ch8-I01-betas) illustrates that for model `I01` the betas for the intercept, lean mass and sex are statistically important. The figure also shows the distributions of the weakly informative priors, derived from previous research on elephant and Weddell seals.
+
+Code to plot the posterior distributions for the precision and dispersion of the model hyperparameter is available in the R script associated with this chapter.
+
+#### Comparison of models with uninformative and informative priors {#gamma-prior-comp}
+
+The results for the Bayesian gamma GLM with non-informative priors and the same model fitted with informative priors can be compared using the DIC:
+
+First extract DICs:
+
+`InfDIC <- c(M01$dic$dic, I01$dic$dic)`
+
+Add weighting:
+
+`InfDIC.weights <- aicw(InfDIC)`
+
+Add names:
+
+`rownames(InfDIC.weights) <- c("default","informative")`
+
+Print DICs:
+
+`dprint.inf <- print (InfDIC.weights, abbrev.names = FALSE)`
+
+Order DICs by fit:
+
+`round(dprint.inf[order(dprint.inf$fit),],2)`
+
+```{r ch8-DIC, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+InfDIC <- c(M01$dic$dic, I01$dic$dic)
+
+InfDIC.weights <- aicw(InfDIC)
+
+rownames(InfDIC.weights) <- c("default","informative")
+
+dprint.inf <- print (InfDIC.weights,
+                     abbrev.names = FALSE)
+
+round(dprint.inf[order(dprint.inf$fit),],2)
+```
+
+The fit for the informative model is marginally better than that with uninformative priors and is more probable. The improvement in fit comes from the weakly informative priors on the fixed effects and hyperparameter.
+
+#### Comparison with frequentist gamma GLM {#gamma-freq-comp}
+
+We compare the results of the Bayesian gamma GLMs with the same model fitted in a frequentist setting. Execution of the model in a frequentist framework can be performed with:
+
+`Freq <- glm(dive_dur ~ lean_mass + age + fSex, family = Gamma(link = log), data = seal)`
+                       
+The results are obtained with:
+
+`round(summary(Freq)$coef[,1:4],3)`
+
+```{r ch8-freq_comp, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+Freq <- glm(dive_dur ~ lean_mass + age + fSex,
+                       family = Gamma(link = log),
+                       data = seal)
+
+round(summary(Freq)$coef[,1:4],3)
+```
+
+We can estimate the dispersion parameter of the model:
+
+`round(summary(Freq)$dispersion,3)`
+
+`r round(summary(Freq)$dispersion,3)`
+
+We can compare these with the results for the Bayesian models:
+
+Table 8.1: **Comparison of model parameters for frequentist, Bayesian model with non-informative and informative priors of gamma GLM model to investigate maximum dive duration of common seals.**
+
+|Model             |Intercept  |lean mass   |age         |sex         |
+|:-----------------|:---------:|:----------:|:----------:|:----------:|
+|Frequentist       |6.16(0.07) |0.008(0.001)|0.002(0.009)|0.069(0.024)|
+|Bayesian (default)|6.16(0.06) |0.008(0.001)|0.002(0.008)|0.069(0.021)|
+|Bayesian (inform) |6.16(0.06) |0.008(0.001)|0.002(0.008)|0.069(0.021)|
+
+Parameter estimates for the fixed effects for all the models are essentially identical.
+
+### Conduct model checks
+
+#### Model selection using the Deviance Information Criterion (DIC) {#gamma-dic}
+
+We perform a simple model selection by removing model parameters and comparing models using the DIC for the Bayesian gamma GLM with weakly informative priors. Start by formulating alternative models:
+
+`f01 <- dive_dur ~ lean_mass + age + fSex`
+
+`f02 <- dive_dur ~ lean_mass + age`
+
+`f03 <- dive_dur ~ lean_mass + fSex`
+
+`f04 <- dive_dur ~ age + fSex`
+
+To use DIC we must re-run the model and specify its calculation using `control.compute`. See the R script associated with this chapter.
+
+The results of model selection show:
+
+```{r ch8-gamma-dic, comment = "", cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+f01 <- dive_dur ~ lean_mass + age + fSex
+f02 <- dive_dur ~ lean_mass + age
+f03 <- dive_dur ~ lean_mass + fSex
+f04 <- dive_dur ~ age + fSex
+
+I01.full <- inla(f01,
+            data = seal, family = "gamma",
+            control.compute = list(dic = TRUE),
+            control.family = list(hyper =
+            list(prec = list(prior = "loggamma", 
+            param = c(5.43, 31.6^(-2))))),
+            control.fixed = list(mean.intercept = 5,
+                                 prec.intercept = 5^(-2),
+                                 mean = list(lean_mass = 0.01, 
+                                             age = -0.01,
+                                             fSexFemale = -0.1), 
+                                 prec = list(lean_mass = 0.05^(-2), 
+                                             age = 0.05^(-2),
+                                             fSexFemale = 0.5^(-2))))
+
+I01.1 <- inla(f02,
+                 data = seal, family = "gamma",
+                 control.compute = list(dic = TRUE),
+                 control.family = list(hyper =
+                 list(prec = list(prior = "loggamma", 
+                 param = c(5.43, 31.6^(-2))))),
+                 control.fixed = list(mean.intercept = 5,
+                                      prec.intercept = 5^(-2),
+                                      mean = list(lean_mass = 0.01, 
+                                                  age = -0.01,
+                                                  fSexFemale = -0.1), 
+                                      prec = list(lean_mass = 0.05^(-2), 
+                                                  age = 0.05^(-2),
+                                                  fSexFemale = 0.5^(-2))))
+
+I01.2 <- inla(f03,
+                 data = seal, family = "gamma",
+                 control.compute = list(dic = TRUE),
+                 control.family = list(hyper =
+                 list(prec = list(prior = "loggamma", 
+                 param = c(5.43, 31.6^(-2))))),
+                 control.fixed = list(mean.intercept = 5,
+                                      prec.intercept = 5^(-2),
+                                      mean = list(lean_mass = 0.01, 
+                                                  age = -0.01,
+                                                  fSexFemale = -0.1), 
+                                      prec = list(lean_mass = 0.05^(-2), 
+                                                  age = 0.05^(-2),
+                                                  fSexFemale = 0.5^(-2))))
+
+I01.3 <- inla(f04,
+                 data = seal, family = "gamma",
+                 control.compute = list(dic = TRUE),
+                 control.family = list(hyper =
+                 list(prec = list(prior = "loggamma", 
+                 param = c(5.43, 31.6^(-2))))),
+                 control.fixed = list(mean.intercept = 5,
+                                      prec.intercept = 5^(-2),
+                                      mean = list(lean_mass = 0.01, 
+                                                  age = -0.01,
+                                                  fSexFemale = -0.1), 
+                                      prec = list(lean_mass = 0.05^(-2), 
+                                                  age = 0.05^(-2),
+                                                  fSexFemale = 0.5^(-2))))
+
+
+# Compare models with the DIC
+I01dic <- c(I01.full$dic$dic, I01.1$dic$dic, 
+            I01.2$dic$dic,    I01.3$dic$dic)
+DIC <- cbind(I01dic)
+rownames(DIC) <- c("lean_mass + age + fSex", 
+                   "lean_mass + age",
+                   "lean_mass + fSex", 
+                   "age + fSex")
+round(DIC,1)
+
+```
+
+The model comprising `lean_mass` and `fSex` is the best fitting. We will conduct checks on a model with weakly informative priors and these parameters.
+
+#### Posterior predictive checks {#gamma-ppc}
+
+If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar, whereas if close to 1 it means the model prediction is too high and if close to zero, too low.
+
+See the R script associated with this chapter for estimating and plotting the posterior predictive p-values for the model.
+
+(ref:ch8-gamma-ppcplot) **Frequency histogram of the posterior predictive p-values for the best-fitting Bayesian gamma GLM with weakly informative priors to predict common seal maximum dive duration. The vertical dotted line indicates 0.5.**
+
+```{r ch8-gamma-ppcplot, fig.cap='(ref:ch8-gamma-ppcplot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+I01.pred <- inla(f03,
+                 data = seal, family = "gamma",
+                 control.predictor = list(link = 1,
+                                          compute = TRUE),
+                 control.compute = list(dic = TRUE, 
+                                        cpo = TRUE),
+                 control.family = list(hyper =
+                 list(prec = list(prior = "loggamma", 
+                 param = c(5.43, 31.6^(-2))))),
+                 control.fixed = list(mean.intercept = 5,
+                                      prec.intercept = 5^(-2),
+                                      mean = list(lean_mass = 0.01, 
+                                                  age = -0.01,
+                                                  fSexFemale = -0.1), 
+                                      prec = list(lean_mass = 0.05^(-2), 
+                                                  age = 0.05^(-2),
+                                                  fSexFemale = 0.5^(-2))))
+
+
+ppp <- vector(mode = "numeric", length = nrow(seal))
+for(i in (1:nrow(seal))) {
+  ppp[i] <- inla.pmarginal(q = seal$dive_dur[i],
+                           marginal = I01.pred$marginals.fitted.values[[i]])
+}
+                      
+ggplot() +
+  geom_histogram(aes(ppp), binwidth = 0.1, 
+                 colour = "black", fill = "gray88") +
+  xlab("Posterior predictive p-values") +
+  ylab("Frequency") +
+  geom_vline(xintercept = 0.5, linetype = "dotted") +
+  theme(text = element_text(size=15)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+```
+
+The frequency histogram of posterior predictive p-values in Fig. \@ref(fig:ch8-gamma-ppcplot) shows that most values are close to zero or 1, with few close to 0.5, which indicates the model check has not been satisfied. We will proceed with further model checks.
+
+#### Cross-validation model checking {#gamma-cv}
+
+We use leave-one-out cross validation to examine how well the model is able to generalise to new data. To ensure there are no potential numerical problems in estimating CPO or PIT for a given model, we first run the following check:
+
+`sum(I01.pred$cpo$failure)`
+
+`r sum(I01.pred$cpo$failure)`
+
+An outcome of zero indicates no problems with the computation of CPO or PIT. 
+
+A uniform distribution of PIT values indicates whether the predictive distributions match the data (see the R script associated with this chapter).
+
+(ref:ch8-PIT) **A. Frequency histogram; B. Uniform Q-Q plot with confidence bands (shaded gray), for cross-validated probability integral transform (PIT) values for the best-fitting Bayesian gamma GLM with weakly informative priors.**
+
+```{r ch8-PIT, fig.cap='(ref:ch8-PIT)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+#Extract pit values
+PIT <- (I01.pred$cpo$pit)
+
+#And plot
+Pit1 <- ggplot() +
+  geom_histogram(aes(PIT), binwidth = 0.1, 
+                 colour = "black", fill = "gray88") +
+  xlab("PIT") + ylab("Frequency") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Pit1
+
+Pit2 <- ggplot(mapping = aes(sample = I01.pred$cpo$pit)) +
+  stat_qq_band(distribution = "unif", alpha = 0.5) +
+  stat_qq_line(distribution = "unif", qprobs = c(0.1, 0.9)) +
+  stat_qq_point(distribution = "unif", size = 2.5, alpha = 0.7) +
+  xlab("Theoretical quantiles") + ylab("Sample quantiles") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+# Pit2
+
+# Combine plots
+ggarrange(Pit1, Pit2,
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+
+```
+
+The frequency histogram of PIT values in Fig. \@ref(fig:ch8-PIT)A shows that the distribution is broadly uniform, with no clustering of values at zero or 1. This conclusion is supported by the Q-Q plot (Fig. \@ref(fig:ch8-PIT)B, which shows that the PIT values broadly match a uniform distribution.
+
+#### Bayesian residuals analysis {#gamma-resids}
+
+The homogeneity of residual variance can be assessed visually by plotting model residual variance against fitted values as well as each variable in the model (see the R script associated with this chapter).
+
+(ref:ch8-gamma-resids) **Bayesian residuals plotted against: A. fitted values; B. lean mass; and C. sex, to assess homogeneity of residual variance.**
+
+```{r ch8-gamma-resids, fig.cap='(ref:ch8-gamma-resids)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+Fit <- I01.pred$summary.fitted.values[, "mean"]
+
+# Calculate residuals
+Res <- seal$dive_dur - Fit
+ResPlot <- cbind.data.frame(Fit,Res,seal$lean_mass,seal$fSex)
+
+# Plot residuals against fitted
+Res1 <- ggplot(ResPlot, aes(x=Fit, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("Bayesian residuals") + xlab("Fitted values") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# And plot residuals against variables in the model
+Res2 <- ggplot(ResPlot, aes(x=seal$lean_mass, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Lean mass (kg)") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+Res3 <- ggplot(ResPlot, aes(x=seal$fSex, y=Res)) + 
+  geom_boxplot(fill='gray88', color="black") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Sex") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(Res1, Res2, Res3,
+                    labels = c("A", "B", "C"),
+                    ncol = 3, nrow = 1)
+```
+
+Ideally, the distribution of residuals around zero should be random along the horizontal axis. In the case of a categorical variables the median of a boxplot of residuals should be approximately zero. For Figs. \@ref(fig:ch8-gamma-resids)A-C the pattern of residuals raises no concerns.
+
+#### Prior sensitivity analysis {#gamma-sens}
+
+A final model check is to examine prior distributions through a sensitivity analysis that involves systematically changing prior distributions and examining the magnitude of outcome for the posterior distribution. 
+
+In previous chapters we investigated prior sensitivity by increasing and decreasing priors on the fixed effects by 20% and examined the outcome for the posterior mean (see the R script associated with Chapters \@ref(gen-model), \@ref(pois-glm) & \@ref(bern-glm). In the case of the seal dive duration data, posterior distributions similarly proved robust to changes in the priors placed on them (analysis not shown).
+
+#### Conclusions from model checks {#gamma-checkconc}
+
+The model with weakly informative priors showed a comparable goodness-of-fit to that of the model with default priors and was used for model checks. Model selection based on the DIC allowed the full model to be refined by dropping seal age, which gave a model with an improved fit to the data. Leave-one-out cross validation indicated that the predictive distributions matched the data well. Residuals plots failed to highlight anything problematic with the model fit and prior sensitivity analysis (which was not shown) demonstrated the model to be robust to changes in prior distributions of fixed effects. To conclude, the Bayesian gamma GLM with weakly informative priors appears to provide a good representation of the data.
+
+### Interpret and present model output	{#gamma-present}
+
+We can specify the final gamma GLM using mathematical notation in the following way:
+
+$Duration_{i}$ ~ $Gamma(\mu_{i}, \tau)$
+
+_E_($Duration_{i}$) = $\mu_i$   and   var($Duration_{i}$) = ($\mu_i$ / $\tau$)
+
+_log_$\mu_i$ = $\eta_i$
+
+$\eta_i$ = $\beta_1$ + $\beta_2$ x $Sex_{i}$ + $\beta_3$ x $Mass_{i}$
+
+Where $Duration_{i}$ is the maximum recorded dive duration of common seal _i_ assuming a gamma distribution with mean $\mu_i$  and variance ($\mu_i$ / $\tau$). $Sex_{i}$ is a categorical covariate with two levels indicating seal sex; either male or female. $Mass_{i}$ is a continuous covariate representing lean body mass of common seal _i_. 
+
+The numerical output of the model is:
+
+```{r ch8-gamma-final, comment="", echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+Final <- inla(f03,
+              data = seal, family = "gamma",
+              control.predictor = list(link = 1,
+                                       compute = TRUE),
+              control.compute = list(dic = TRUE, 
+                                     cpo = TRUE),
+              control.family = list(hyper =
+              list(prec = list(prior = "loggamma", 
+              param = c(5.43, 31.6^(-2))))),
+              control.fixed = list(mean.intercept = 5,
+                                   prec.intercept = 5^(-2),
+                                   mean = list(lean_mass = 0.01, 
+                                               age = -0.01,
+                                               fSexFemale = -0.1), 
+                                   prec = list(lean_mass = 0.05^(-2), 
+                                               age = 0.05^(-2),
+                                               fSexFemale = 0.5^(-2))))
+                       
+# Posterior mean values and 95% CI for fixed effects
+BetasFinal <- Final$summary.fixed[,c("mean", "sd", 
+                                     "0.025quant", 
+                                     "0.975quant")] 
+round(BetasFinal, digits = 3)
+```
+
+These results can be more formally presented in the following way:
+
+Table 8.2: **Posterior mean estimates for maximum dive duration (sec.) of common seals (_Phoca vitulina_) as a function of lean mass (kg) for males and females modelled using a gamma GLM fitted using Bayesian inference with INLA. CrI are the Bayesian 95% credible intervals.**
+
+|Model parameter|Posterior mean|Lower 95% CrI|Upper 95% CrI|
+|:--------------|:------------:|:-----------:|:-----------:|
+|Intercept      |6.16          |6.04         |6.27         |
+|Lean mass      |0.008         |0.007        |0.009        |
+|Sex (female)   |-0.071        |-0.111       |-0.031       |
+
+These results (Table 8.2) show a statistically important effect of sex on dive duration, with males diving for longer than females. There was a significant positive effect of lean mass on dive duration; the greater the lean mass of a seal, the longer it was able to stay submerged.
+
+### Visualise the results
+
+The Bayesian gamma GLM can be visualised to best appreciate model outcomes. Coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch8-final-plot) **Posterior mean dive duration (sec.) of 29 common seals (_Phoca vitulina_) as a function of lean mass (kg) and sex, modelled using a gamma GLM fitted using Bayesian inference with INLA. Shaded areas are Bayesian 95% credible intervals. Black points are observed data for different seals.**
+
+```{r ch8-final-plot, fig.cap='(ref:ch8-final-plot)', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+MyData <- expand.grid(
+  fSex = levels(seal$fSex),
+  lean_mass = seq(
+    from = min(seal$lean_mass), 
+    to = max(seal$lean_mass), 
+    length = 50))
+
+# Make a design matrix
+Xmat <- model.matrix(~ lean_mass + fSex, data = MyData)
+Xmat <- as.data.frame(Xmat)
+lcb <- inla.make.lincombs(Xmat)
+
+# Re-run the model in R-INLA using the combined data set, ensuring
+# that `compute = TRUE` is selected in the `control.predictor` argument
+
+# The final model is: 
+Final.Pred <- inla(f03,
+              data = seal, family = "gamma",
+              lincomb = lcb,
+              control.inla = list(lincomb.derived.only = TRUE),
+              control.predictor = list(link = 1,
+                                       compute = TRUE),
+              control.family = list(hyper =
+              list(prec = list(prior = "loggamma", 
+              param = c(5.43, 31.6^(-2))))),
+              control.fixed = list(mean.intercept = 5,
+                                   prec.intercept = 5^(-2),
+                                   mean = list(lean_mass = 0.01, 
+                                               age = -0.01,
+                                               fSexFemale = -0.1), 
+                                   prec = list(lean_mass = 0.05^(-2), 
+                                               age = 0.05^(-2),
+                                               fSexFemale = 0.5^(-2))))
+
+# Get the marginal distributions:
+Pred.marg <- Final.Pred$marginals.lincomb.derived
+
+# The output above is on the log-scale. We need to convert the 
+# marginal distributions of x into the distribution of exp(x). 
+# Starting point is the $marginals.lincomb.derived, which 
+# contains the marginal posterior distribution for 
+# each predicted value, and we have nrow(MyData) of them.
+# The process is for 99% identical to that in the Poisson GLMM.
+
+# This is a function that converts x into exp(x)
+MyLog <- function(x) {exp(x)}
+
+# Get mu, selo and seup
+MyData$mu <- unlist(lapply(Pred.marg,function(x)inla.emarginal(MyLog,x)))
+
+MyData$selo <- unlist(lapply(Pred.marg,function(x)inla.qmarginal(c(0.025), 
+                      inla.tmarginal(MyLog, x))))
+
+MyData$seup <- unlist(lapply(Pred.marg,function(x)inla.qmarginal(c(0.975), 
+                             inla.tmarginal(MyLog, x))))
+
+# Define labels
+label_sex <- c("Female" = "Female seals", 
+               "Male"   = "Male seals")
+
+# Plot
+ggplot() + 
+  geom_jitter(data = seal, aes(y = dive_dur, x = lean_mass),
+              shape = 19, size = 2.5, height = 0.1, 
+              width = 0.1, alpha = 0.7) +
+  xlab("Seal lean mass (kg)") + 
+  ylab("Posterior mean dive duration (sec.)") +
+  # ylim(680,1300) + 
+  theme(text = element_text(size = 12)) + 
+  theme(panel.background = element_blank()) + 
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) + 
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1)) +
+  geom_line(data = MyData, aes(x = lean_mass, y = mu), size = 1) +
+  geom_ribbon(data = MyData, aes(x = lean_mass, 
+                                 ymax = seup, ymin = selo), alpha = 0.5) +
+  facet_grid(. ~ fSex, scales = "fixed", space = "fixed",
+             labeller = labeller (fSex = label_sex)) +
+  theme(strip.text = element_text(size = 12, face="italic"))
+```
+
+The results of this statistical analysis can be summarised as follows:
+
+_A gamma GLM with log link function was fitted using Bayesian inference with INLA to data to predict the maximum dive duration (sec.) of a group of 29 radio-tagged common seals_ (Phoca vitulina). _There was a statistically important positive effect of seal lean mass (kg) and sex on dive duration; with males performing longer dives than females (Table 8.2); Fig. \@ref(fig:ch8-final-plot)). The model was fitted using weakly informative priors on the fixed effects, obtained from previous research on elephant seals_ (Mirounga spp.) _and Weddell seals_ (Leptonychotes weddellii).
+
+## Conclusions
+
+A gamma distribution offers an alternative to the Gaussian distribution for strictly positive and skewed data, such as those modelled here. This approach avoids having to transform the response variable and fit a Gaussian GLM. Model fit for the gamma GLM was good, and unlike a Poisson or negative binomial GLM, the problem of overdispersion does not apply to a gamma GLM. The adoption of weakly informative priors on the fixed effects, derived from previous research on related species, adds biological plausibility to the priors, but without changing the model outcome substantially. Putting a weak prior on the hyperparameter helps improve model fit, and optimises this parameter (rather than relying on the default).

@@ -1,0 +1,329 @@
+# Data exploration
+
+Before attempting to analyse data, whether in a frequentist of Bayesian context, it is vital to perform a data exploration. A data exploration will save time by identifying any potential problems in the data and will help in deciding what type of analysis to conduct and model to fit.
+
+## Six-step data exploration protocol
+
+We adopt the protocol proposed by [@Zuur_2009] for conducting data exploration. This protocol comprises 6 steps and is intended to identify:
+    
+1.	Outliers in response and independent variables
+2.	Normality and homogeneity of the response variable
+3.	An excess of zeros in the response variable
+4.	Multicollinearity among independent variables
+5.	Relationships among response and independent variables
+6.	Independence of the response variable
+
+It is good practice to conduct a data exploration, irrespective of the type of data you have or the test you plan to conduct. Here we will conduct a data exploration on the Wytham Wood blue tit data introduced in Chapter 1 from the study by @O_Neill_2018.
+
+*__Import data__*
+
+```{r ch3-libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)  
+library(ggplot2)
+library(GGally)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(car)
+library(devtools)
+library(ggpubr)
+library(qqplotr)
+library(geiger)
+library(gridExtra)
+library(rlang)
+library(INLA)
+library(brinla)
+library(inlatools)
+```
+    
+Data are saved in the tab-delimited file `cyanistes.txt` and are available from [Dropbox](https://www.dropbox.com/s/5q3hdyxcouw6ifa/cyanistes.txt). Download this file to the same directory (folder) where you save the `.proj` for this book. This is then easily imported into a dataframe in R using the command:
+    
+`cyan <- read.table(file = "cyanistes.txt", header = TRUE, dec = ".", stringsAsFactors = TRUE)`
+
+```{r ch3_import cyan, echo=FALSE, warning=FALSE, message=FALSE}
+cyan <- read.table(file = "cyanistes.txt", header = TRUE, dec = ".", stringsAsFactors = TRUE)
+```
+
+Start by inspecting the dataframe using the structure function `str`:
+    
+`str(cyan)`
+
+```{r ch3-str-cyan, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(cyan, vec.len=1)
+```
+
+The dataframe comprises 438 observations of 7 variables. Each row in the dataframe represents a record for a blue tit nest. The variable id is a unique identifier for an artificial nest box in which a nest was found. Note that there are fewer levels of id (`r length(unique(cyan$id))`) than observations (`r nrow(cyan)`), which indicates there are multiple records (in different years) for different nests in the same nest box. This is a potential problem and we will revisit this point in Section \@ref(independence). The variable `zone` represents different woodland compartments within Wytham Woods; there are nine levels of this categorical variable. These zones represent a discrete stand of trees in the woodland, where the composition of vegetation varies due to historical woodland management practices. The variable `year` is the year of data collection (varying from 2001-2003). The variable `multi` is binomial, comprising 1s and 0s, and indicates whether the female that built the nest bred more than once in that year (0 = no, 1 = yes). `Height` is a continuous variable and is the vertical height (in m) at which the nest box containing the nest was attached to a tree. Day represents the number of days after the 1st April in a given year that the first egg was laid in the nest. Finally, `depth` is the depth of the nest, recorded as a fraction of the nest box filled. Nest `depth`, which represents a measure of nest size, may indicate blue tit body condition or access to resources and is the main variable of interest to the researchers who conducted the study – termed the _response_ or _dependent variable_.
+
+Missing data, which are designated _NA_ in the tab-delimited file, can be problematic in data analysis. Therefore, it is necessary to check if there are any missing values in the dataframe.
+
+`colSums(is.na(cyan))`
+
+```{r ch3_colsums, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+colSums(is.na(cyan))
+```
+
+No missing data are associated with any of the variables in the dataframe.
+
+### Outliers
+
+An outlier is an observation that has a relatively large or small value compared to the majority of observations. Many statistical techniques are sensitive to the presence of outliers in data. Outliers are best identified visually, here we use a boxplot (R code for this plot is available in the script associated with this chapter):
+
+(ref:ch3-boxplot-cyan) **Boxplot of blue tit nest depths for each woodland zone in Wytham Wood.**
+    
+```{r ch3-boxplot-cyan, fig.cap='(ref:ch3-boxplot-cyan)', fig.align='center', fig.dim=c(6, 4), message = FALSE, echo=FALSE, warning=FALSE}
+
+library(magrittr)
+library(tidyverse)
+library(gridExtra)
+
+# Define preferred figure format
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                  color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+# Then plot
+cyan %>%
+    ggplot(aes(y = depth, x = zone)) +
+    labs(y = "Nest depth", x = "Woodland zone") +
+    geom_boxplot(fill = "red1") +
+    My_theme +
+    theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+
+```
+
+Fig. \@ref(fig:ch3-boxplot-cyan) visualises the median and spread of the data, with the median represented as a thick horizontal line and the 25% and 75% quartiles (the inter quartile range or IQR) represented by the box. The black lines extending from the box represent the range of the data and the black dots are outliers. Outliers are arbitrarily identified as data points that are 3x lower or higher than the IQR. The boxplot shows that there are differences in the average nest depth among woodland zones. This finding suggests that there could be spatial differences in nest size that may be related to vegetation composition, or the birds that occupy different areas of Wytham Woods.
+
+An approach to identify outliers for continuous variables is to use multi-panel Cleveland dotplots as in Fig. \@ref(fig:ch3-cleveland) (R code for this plot is available in the script associated with this chapter):
+
+(ref:ch3-cleveland) **Dotplots of the continuous variables height, day and depth. Data are arranged by the order they appear in the dataframe (bottom to top).**
+    
+```{r ch3-cleveland, fig.cap='(ref:ch3-cleveland)', fig.align='center', message = FALSE, fig.dim=c(6, 4), echo=FALSE, warning=FALSE}
+
+#Set a plotting theme to use throughout
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                          color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+#Write a function
+multi_dotplot <- function(filename, Xvar, Yvar){
+    filename %>%
+        ggplot(aes(x = {{Xvar}})) +
+        geom_point(aes(y = {{Yvar}})) +
+        theme_bw() +
+        My_theme +
+        coord_flip() +
+        labs(x = "Order of Data")}
+
+#Add obs id
+cyan <- cyan %>%
+    mutate(order = seq(1:nrow(cyan)))
+
+#CHOOSE THE VARIABLE FOR EACH PLOT AND APPLY FUNCTION
+p1 <- multi_dotplot(cyan, order, height)
+p2 <- multi_dotplot(cyan, order, day)
+p3 <- multi_dotplot(cyan, order, depth)
+
+#CREATE GRID
+grid.arrange(p1, p2, p3, nrow = 1)
+```
+
+The dotplot for `day` shows no prominent outliers. However, for `height` there appears to be one nest box that is set unusually low and another unusually high. For `depth` there is one nest that is unusually deep.
+
+Grubb’s test from the `outliers` package can be used to test whether the value that is farthest (above or below) the mean is an outlier. In this test an outlier is identified from the difference between the outlier value and the mean of all the values, divided by the standard deviation.
+
+For nest depth we will test for a single outlier:
+    
+`outliers::grubbs.test(cyan$depth, type = 10)`
+
+```{r ch3-grubbs-depth, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+outliers::grubbs.test(cyan$depth, type = 10)
+```
+
+Grubb’s test shows that the single unusually high depth value (of 0.75) is indeed an outlier (the P-value is lower than the critical threshold of 0.05). However, Grubb’s test assumes these data are normally distributed – something we have yet to test.
+
+For nest box height there is an unusually high and low value. Consequently we modify the test to examine two outliers simultaneously by changing test ‘type’.
+
+`outliers::grubbs.test(cyan$height, type = 11)`
+
+```{r ch3-grubbs-height, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+outliers::grubbs.test(cyan$height, type = 11)
+```
+
+The test indicates that the low (0.6 m) and high (3.5 m) nest boxes are both outliers. Even where outliers exist, before we consider dropping data from our analysis, we go on with our data exploration, but take note of the variables that have at least one outlier that might influence a subsequent analysis.
+
+On the basis of Fig. \@ref(fig:ch3-cleveland) we concluded that there were no outliers in the variable `day` based on our visual assessment. We can confirm that conclusion with a final Grubb’s test.
+
+`outliers::grubbs.test(cyan$day, type = 10)`
+
+```{r ch3-grubbs-day, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+outliers::grubbs.test(cyan$day, type = 10)
+```
+
+The test indicates that the highest value (day 37) is not an outlier since the P-value exceeds 0.05. This means that our visual inspection of the data was accurate. We should not be overly reliant on tests, such as Grubb’s test, to make decisions about our data – visual inspection is often enough.
+
+### Normality and homogeneity of the dependent variable
+
+An assumption of some statistical tests is that the response variable is _normally distributed_ at each covariate value. The distribution of a continuous variable can be visualized by dividing the x-axis into “bins” and counting the number of observations in each bin as a frequency polygon using the `geom_freqpoly()` function from the `ggplot2` plotting package:
+    
+`cyan %>% ggplot(aes(depth)) + geom_freqpoly(bins = 7) + labs(x = "Nest depth", y = "Frequency") + theme_classic() + theme(panel.border = element_rect(colour = "black", size = 1))`
+
+(ref:ch3-freqpoly-cyan) **Frequency polygon of nest depth for blue tits in Wytham Woods.**
+
+```{r ch3-freqpoly-cyan, fig.cap='(ref:ch3-freqpoly-cyan)', fig.align='center', fig.dim=c(6, 4), message = FALSE, echo=FALSE, warning=FALSE}
+cyan %>% ggplot(aes(depth)) +
+    geom_freqpoly(bins = 7) +
+    labs(x = "Nest depth", y = "Frequency") +
+    My_theme + theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+
+```
+
+The frequency polygon plot of the dependent variable (Fig. \@ref(fig:ch3-freqpoly-cyan)) shows a positive skew, which potentially indicates deviation from normality. However, this figure ignores the factors, such as nest height or zone, that may explain deviation from normality. Given that we already recognise that the distribution of nest depth may vary with woodland zone (Fig. \@ref(fig:ch3-boxplot-cyan)), it is not surprising that the data appear as they do. Outliers may also affect the distribution of the dependent variable. At this stage, then, we can proceed with the data exploration bearing in mind that the raw data values for the dependent variable are not entirely normally distributed.
+
+It is possible to test for normality using the Shapiro-Wilk test. The null hypothesis for this test is that the distribution of the data follows a normal distribution. If the P-value is below 0.05 (P <0.05) the null hypothesis is rejected and the conclusion is that the data depart from normality.
+
+`shapiro.test(cyan$depth)`
+
+```{r ch3-shapiro, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+shapiro.test(cyan$depth)
+```
+
+The test shows significant departure from normality (P <0.05).
+
+_Homogeneity of variance_ is an even distribution of covariate values around the mean and is another important assumption of many statistical tests. Without homogeneity of variance estimated P-values are unreliable. There are several ways to measure homogeneity of variance.
+
+To visualise the homogeneity of the response variable in relation to a categorical covariate a boxplot is illustrative. Fig. \@ref(fig:ch3-boxplot-cyan) showed variation in the spread of depth data among levels of the factor zone, possibly indicating a lack of homogeneity. A scatterplot is better to visualise homogeneity of variance in relation to a continuous covariate.
+
+`cyan %>% ggplot(aes(x = height, y = depth)) + geom_jitter( shape = 19, size = 2.5, height = 0.05, width = 0.05, alpha = 0.5) + geom_hline(yintercept=0.33, linetype="dashed") + geom_vline(xintercept=2.19, linetype="dashed") + labs(x = "Nest box height (m)", y = "Nest depth") + xlim(0,4) + ylim(0,0.8) + theme_classic() + theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))`
+
+(ref:ch3-scatter-cyan) **Scatterplot of depth and height. The mean for depth and height are added as horizontal and vertical dashed lines, respectively. The distribution of points in the four quadrants are similar, indicating homogeneity of the data.**
+
+```{r ch3-scatter-cyan, fig.cap='(ref:ch3-scatter-cyan)', fig.align='center', fig.dim=c(6, 4), message = FALSE, echo=FALSE, warning=FALSE}
+
+cyan %>% ggplot(aes(x = height, y = depth)) +
+  geom_jitter(shape = 19, size = 2.5, height = 0.05, 
+              width = 0.05, alpha = 0.5) +
+  geom_hline(yintercept=0.33, linetype="dashed") +
+  geom_vline(xintercept=2.19, linetype="dashed") +
+  labs(x = "Nest box height (m)", y = "Nest depth") +
+  xlim(0,4) + ylim(0,0.8) +
+  My_theme + 
+  theme(panel.border = element_rect(colour = "black", 
+                                    fill=NA, size = 1))
+
+```
+
+The scatterplot (Fig. \@ref(fig:ch3-scatter-cyan)) shows a symmetrical cloud of points, indicating that the data probably do not deviate significantly from homogeneity. 
+
+There are several tests of homogeneity of variance, such as Bartlett's Test, the F-ratio test, and Levene's test. The first two of these assume normality of the data. If your data deviate from normality they should not be used. Levene's test does not assume normality. An alternative is the Brown & Forsythe test, which uses the median rather than mean in its estimation, and is robust to departures from normality. This test is based on Levene's test and can be obtained using the `leveneTest()` function from the `car` package:
+
+`leveneTest(depth ~ zone, data = cyan, center = median)`
+
+```{r Ch3-levene-cyan, comment = "", message = FALSE, echo=FALSE, warning=FALSE}
+library(car)
+leveneTest(depth ~ zone, cyan, center = median)
+
+```
+
+Which confirms the data do not deviate from homogeneity (P = 0.774).
+
+### Lots of zeros in the response variable
+
+Zeros should not be omitted from a dataset. However, an excess of zeros in the response variable, termed ‘zero inflation’, can cause problems with an analysis. Fortunately, there are a number of ways of dealing with zero inflation. The first step is to identify whether there is a potential problem. The percentage of zeros in the response variable can be estimated as:
+
+`sum(cyan$depth == 0, na.rm = TRUE) * 100 / nrow(cyan)`
+
+`r sum(cyan$depth == 0, na.rm = TRUE) * 100 / nrow(cyan)`
+
+There are no zeros in the response variable for this dataset, but it is good practice to always check with your own datasets. If there had been zeros, how many would be too many? The question of how many zeros leads to zero inflation is often asked but cannot be answered without fitting a model and then running simulations from it to see how many zeros are predicted and then compared to the raw data. This procedure is dealt with fully in Chapters 5 and 6.
+
+### Multicollinearity among covariates
+
+Along with normality of residuals and homogeneity of variance, an additional assumption of analyses that include several predictor variables is independence of the covariates. In ecological studies it is not unusual to collect a large number of environmental or behavioural variables that are often highly correlated. If independent variables in an analysis are correlated the variance associated with predictions will be affected.
+
+Multicollinearity can be tested in several ways. For continuous variables the simplest is to construct a correlation matrix with corresponding pairplots using the `ggpairs()` function from the `GGally` package:
+
+(ref:ch3-pairs-cyan) **Pairplots of year, height and day. Upper right panels show pairwise Pearson correlations, with number of stars proportional to the correlation coefficient (_r_).'**
+
+```{r ch3-pairs-cyan, fig.cap='(ref:ch3-pairs-cyan)', fig.align ='center', fig.dim = c(5, 4), message = FALSE, echo=FALSE, warning=FALSE}
+
+library(GGally)
+
+cyan %>% 
+    ggpairs(columns = c("year", "height", "day"), aes(alpha = 0.8), lower = list(combo = wrap("facethist", binwidth = 2))) + My_theme
+
+```
+
+The pairplots (Fig. \@ref(fig:ch3-pairs-cyan)) show `year` and `day` to be negatively associated ( _r_ = -0.76). This is an interesting observation, since it implies that there has been a change in blue tit laying date with year, which may have ecological significance. We need to be aware of this pattern if we plan to use these variables to make predictions of nest depth.
+
+
+### Relationships among dependent and independent variables
+
+Visual inspection of the data using plots is a valuable step and will illustrate what relationships there are between variables in your dataframe. Do not be shy about spending time plotting and summarising your data before formally analysing them – this is time well spent and will help inform you about the peculiarities of your data and the appropriate way to analyse them.
+
+Below is R script to conduct a multi-panel scatterplot:
+
+`cyan %>% ggplot(aes(x = height, y = depth)) + geom_point() + geom_smooth(method = 'lm', colour = 'red', se = FALSE) + theme(panel.background = element_blank()) + theme(panel. border = element_rect(fill = NA, size = 1)) + theme(strip. background = element_rect(fill = "white", color = "white", size = 1)) + theme(text = element_text(size=16)) + facet_wrap(~zone)`
+
+(ref:multipanel-cyan) **Multipanel scatterplot of nest depth and nest box height across woodland zones with a line of best fit plotted.**
+
+```{r ch3-multipanel-cyan, fig.cap='(ref:multipanel-cyan)', fig.align='center', fig.dim=c(6, 5), message = FALSE, echo=FALSE, warning=FALSE}
+cyan %>% 
+    ggplot(aes(x = height, y = depth)) + 
+    geom_point(colour = 'gray44') + 
+    geom_smooth(method = 'lm', colour = 'black', se = FALSE) +
+    theme(panel.background = element_blank()) + theme(panel.border = element_rect(fill = NA, size = 1)) + 
+    theme(strip.background = element_rect(fill = "white", color = "white", size = 1)) + 
+    theme(text = element_text(size=16)) + 
+    facet_wrap(~zone)
+```
+
+The plot of the data in Fig. \@ref(fig:ch3-multipanel-cyan) does not suggest strongly non-linear patterns. Fitted lines for the relationship between height and depth indicate that the nature of this relationship is different for some woodland zones (e.g. ‘O’ and ‘CP’), suggesting that there may be interesting interactions between variables.
+
+### Independence of response variable {#independence}
+
+A critical assumption of any data analysis is that each observation in a dataset is independent of all others. For some data this assumption is difficult to confirm but the risk of non-independence can be reduced by careful sampling. Strictly randomly collected samples will tend to be independent.
+
+Additional information, such as spatial location or time of collection, can be included in a dataset. Spatial and temporal dependency in ecological data are common and require specific modelling approaches.
+
+For the Wytham Woods blue tit data, remember that there are fewer levels of nest box id than observations, which indicates there are multiple records (in different years) for different nests in the same nest box; i.e. some nests were built in the same nest boxes in different years. This pattern means that every row of data is not strictly independent. This situation is not fatal to an analysis as long as we recognise that there is ‘dependency’ in the data. For now we have two options; the first is to delete rows with duplicate records for the same nest box; though the problem then arises of which to remove. A second option is to accept a low level of dependency and report that fact within the results of a data analysis. A more sophisticated solution is to fit nest box id as a 'random' term in a General(ised) Linear Mixed Model (GLMM).
+
+## Results of data exploration
+
+The data exploration showed:
+
+1.	An outlier in the response variable depth. There were additional outliers in the explanatory variable height.
+2.	A non-normally distributed but homogenous response variable.
+3.	No zeros in the response variable.
+4.	Collinearity between the variables day and year.
+5.	A potential interaction between depth and zone.
+6.	Dependency in the data due to repeated sampling of the same nest boxes.
+
+If we wish to go further with analysing these data we will need to address the problem of outliers. We will also need to consider non-normality and collinearity. The potential interaction we identified might inform our decisions about what model to fit. Finally, at the very least we need to be aware of the inherent dependency in our data, which we can deal with by dropping some of our data, or accommodating dependency in our analysis. 
+
+## Conclusions
+
+Data exploration is a crucial procedure that will save time by identifying potential problems in the data. It will help identify interesting patterns and will inform decisions on what model to fit. 
+
+A six-step data exploration involves recognising:
+
+1.	Outliers in response and independent variables
+2.	Normality and homogeneity of the response variable
+3.	An excess of zeros in the response variable
+4.	Multicollinearity among independent variables
+5.	Relationships among response and independent variables
+6.	Independence of the response variable
+

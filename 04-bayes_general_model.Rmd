@@ -1,0 +1,1764 @@
+# Bayesian GLM {#gen-model}
+
+A General Linear Model predicts a dependent (or response) variable, which is continuous and approximately normally distributed, from one or more independent (or predictor) variables. A normal statistical distribution, also referred to as a Gaussian distribution (after the brilliant German mathematician Carl Friedrich Gauss), assumes the data are drawn from a distribution that is symmetric and can be summarised by the arithmetic mean and standard deviation. Independent variables may also be continuous, categorical, or a combination of continuous and categorical. Categorical variables are commonly referred to as _factors_, which have a series of _levels._ For example, a factor might be sex, which has two levels (male and female).
+
+A GLM comprises three components: 1. the linear predictor, which is a linear function of the predictor variable; 2. the conditional probability distribution of the response variable, which is the distribution of the response variable across the regression line for the given set of predictor variables; 3. the link function, which connects the linear predictor with the mean of the conditional probability distribution. 
+
+Choice of conditional probability distribution (such as Gaussian, binomial, Bernoulli, Poisson, gamma, beta, etc.) is not based on the distribution of the raw response variable, but rather on variable characteristics, such as whether the variable is continuous or discrete, bounded or unbounded. Choice of conditional distribution largely determines which link function is most appropriate (such as identity, log, logit, inverse, etc.), though choice of link function can be refined as part of the model fitting process.
+
+## European bitterling territoriality {#bitterling}
+
+In this Chapter we fit a Bayesian General Linear Model with a Gaussian conditional distribution and an identity link function to a set of data on male European bitterling (_Rhodeus amarus_) territorial behaviour. Bitterling are small freshwater fish with an unusual breeding system. During the breeding season, male bitterling are aggressively territorial and guard freshwater mussels. Female bitterling develop a long egg-laying tube (‘ovipositor’) that they use to place their eggs in the gills of the mussel, which the males then fertilise.
+
+A study was conducted in Lake Dědová near Lanžhot in the Czech Republic to measure the response distance of male bitterling to a rival when they were guarding a mussel. Male response distance was measured by gradually moving a model of a male bitterling towards a territorial male that was guarding a mussel. The response distance was the horizontal distance that it was possible to move the model towards a guarded mussel before the territorial male attacked it. After obtaining an estimate of the response distance, territorial males were captured with a hand net and their length measured, after which they were immediately released.
+
+In addition, males were randomly allocated to a food supplement treatment, with approximately half the males in the study receiving a 1 g cube of freeze-dried _Tubifex_ worms daily for six days before the start of data recording. The remaining males received no food supplement, but did experience disturbance each day that was comparable to those receiving a food supplement.
+
+A two-day pilot study with 8 individuals was also conducted. Data from the pilot study were used to assign prior distributions to fixed parameters in the model.
+
+*__Import data__*
+
+```{r ch4-libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library(lattice)  
+library(ggplot2)
+library(kableExtra)
+library(GGally)
+library(tidyverse)
+library(mgcv)
+library(lme4)
+library(car)
+library(devtools)
+library(ggpubr)
+library(qqplotr)
+library(gridExtra) 
+library(rlang)
+library(INLA)
+library(brinla)
+```
+
+Data for European bitterling are saved in a comma-separated values (CSV) file `bitterling.csv` and are imported into a dataframe in R using:
+
+`bitt <- read_csv("bitterling.csv")` 
+```{r ch4-csv-bitt, echo=FALSE, warning=FALSE, message=FALSE}
+bitt <- read_csv("bitterling.csv")
+```
+
+Start by inspecting dataframe `bitt`:
+
+`str(bitt)`
+
+```{r ch4-str-bitt, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(bitt, vec.len=2)
+```
+
+The dataframe comprises `r nrow(bitt)` observations of `r ncol(bitt)` variables. Each row in the dataframe represents an observation for a different male bitterling (`male`). The variable `sl` is continuous and represents the standard length (in mm) of each male bitterling, while the variable `supp_feed` is categorical (though coded numerically) indicating those males that received no food supplement (`0`) and those that did (`1`).  The variable `resp_dist` is the aggressive response distance (in cm) and is the response (dependent) variable of interest.
+
+## Steps in fitting a Bayesian GLM {#glm-steps}
+
+We will follow the 9 steps to fitting a Bayesian GLM, detailed in Chapter 2:
+
+_1. State the question_
+
+_2. Perform data exploration_
+
+_3. Select a statistical model_
+
+_4. Specify and justify a prior distribution on parameters_
+
+_5. Fit the model_
+
+_6. Obtain the posterior distribution_
+
+_7. Conduct model checks_
+
+_8. Interpret and present model output_
+
+_9. Visualise the results_
+
+### State the question
+
+This study was conducted to understand the extent to which the territorial behaviour of male bitterling is a function of male size and body condition. Our predictions were that larger males would be more effective in responding to intruders to their territory than smaller males. A further prediction was that, given that territoriality is energetically expensive, and males are often constrained in their feeding while engaged in territory defence, supplementing the diets of males would also increase the aggressive response distance of males. A final prediction was that these two variables would interact; specifically that the effect of body size on response distance would be less pronounced in males that received a food supplement; i.e. energy depletion is more severe for larger males.
+
+Consequently there are three specific predictions to test:
+
+1. A positive association between male body size, measured as standard length (`sl`), and response distance (`resp_dist`).
+
+2. A positive association between provision of supplementary food (`supp_feed`) and response distance.
+
+3. An interaction between male body size and supplementary feeding and response distance, with a steeper slope between body size and response distance for males that did not receive supplementary food.
+
+### Data exploration
+
+As with any analysis, whether Bayesian or frequentist, we start by conducting a data exploration to identify any potential problems with the data. First check for missing data.
+
+`colSums(is.na(bitt)`
+
+```{r ch4-col-sums, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+colSums(is.na(bitt))
+```
+
+No missing data.
+
+#### Outliers
+
+Outliers in the data can identified visually using multi-panel Cleveland dotplots (R code is available in the R script associated with this chapter):
+
+(ref:ch4-dotplot) **Dotplots of male standard length (mm) and aggressive response distance (cm) of European bitterling. Data are arranged by the order they appear in the dataframe.**
+
+```{r ch4-dotplot, fig.cap='(ref:ch4-dotplot)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+My_theme <- theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.ticks.x=element_blank(),
+                  panel.background = element_blank(),
+                  panel.border = element_rect(fill = NA, size = 1),
+                  strip.background = element_rect(fill = "white", 
+                                                  color = "white", size = 1),
+                  text = element_text(size = 14),
+                  panel.grid.major = element_line(colour = "white", size = 0.1),
+                  panel.grid.minor = element_line(colour = "white", size = 0.1))
+
+
+#Write function
+multi_dotplot <- function(filename, Xvar, Yvar){
+  filename %>% 
+    ggplot(aes(x = {{Xvar}})) +
+    geom_point(aes(y = {{Yvar}})) +
+    theme_bw() +
+    My_theme +
+    coord_flip() +
+    labs(x = "Order of Data")
+}
+
+#CHOOSE THE VARIABLE FOR EACH PLOT AND APPLY FUNCTION
+p1 <- multi_dotplot(bitt, male, sl) 
+p2 <- multi_dotplot(bitt, male, resp_dist)
+
+#CREATE GRID
+grid.arrange(p1, p2, nrow = 1)
+```
+
+There are no outliers in Fig. \@ref(fig:ch4-dotplot).
+
+#### Normality and homogeneity of the dependent variable
+
+An assumption of a Bayesian Gaussian GLM is that the response variable is normally distributed at each level of the covariate values. The distribution of a continuous variable can be visualized by dividing the x-axis into “bins” and counting the number of observations in each bin as a frequency polygon using the `geom_freqpoly()` function from the `ggplot2` package:
+
+`bitt %>%'`
+    `ggplot(aes(resp_dist)) + `
+    `geom_freqpoly( bins = 6) + `
+    `labs(x = "Response distance (cm)", y = "Frequency") + `
+    `My_theme`
+
+(ref:ch4-freqpoly) **Frequency polygon of response distance (cm) of male European bitterling to the model of a rival.**
+
+```{r ch4-freqpoly, fig.cap='(ref:ch4-freqpoly)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+bitt %>% 
+  ggplot(aes(resp_dist)) +
+  geom_freqpoly( bins = 6) +
+  labs(x = "Response distance (cm)", y = "Frequency") +
+  My_theme
+```
+
+The frequency polygon plot of the dependent variable (Fig. \@ref(fig:ch4-freqpoly)) shows a distribution that looks approximately normal. 
+
+#### Balance of categorical variables
+
+The categorical variable for the supplementary feeding treatment (`supp_feed`) is coded numerically (0 = no supplementary feeding, 1 = supplementary feeding). This variable needs to be designated as a factor.
+
+`bitt$Supp <- factor(bitt$supp_feed)`
+
+```{r ch4-factor, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+bitt$fSupp <- factor(bitt$supp_feed)
+```
+
+We then examine the balance of this variable:
+
+`table(bitt$fSupp)`
+
+```{r ch4-balance, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+table(bitt$fSupp)
+```
+
+Balance is not perfect, with 25 males in the no supplementary feeding treatment and 23 receiving supplementary feeding, but the balance is acceptable.
+
+#### Multicollinearity among covariates
+
+Along with normality of residuals and homogeneity of variance, an additional assumption of linear modelling is independence of the independent variables. In ecological studies it is not unusual to collect a large number of variables, which are often highly correlated. If covariates in a model are correlated, then the model may produce unstable parameter estimates with inflated standard errors.
+
+Multicollinearity can be tested in several ways. We can obtain a comprehensive summary of the relationship between the two model covariates using the `ggpairs` command from the `GGally` package:
+
+`bitt %>% ggpairs(columns = c("sl", "fSupp"), aes(colour = fSupp, alpha = 0.8), lower = list(continuous = "smooth_loess", combo = wrap("facethist", binwidth = 5))) + My_theme`
+
+(ref:ch4-ggpairs) **Plot matrix of bitterling standard length (mm) and supplementary feeding treatment. The top left panel shows a frequency plot of standard length split by feeding treatment, while the top right shows the same data expressed as a boxplot. The lower left panel shows a length-frequency histogram of standard lengths, with those for males that did not receive supplementary feeding above and those that did, below. The lower right panel shows the total number of individual males in each supplementary feeding treatment.**
+
+```{r ch4-ggpairs, fig.cap='(ref:ch4-ggpairs)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
+
+bitt %>% 
+    ggpairs(columns = c("sl", "fSupp"),
+            aes(colour=fSupp, alpha = 0.8),
+            lower = list(continuous = "smooth_loess", combo = wrap("facethist", binwidth = 5))) +
+    My_theme
+```
+
+The plot matrix in Fig. \@ref(fig:ch4-ggpairs) demonstrates no clear pattern of collinearity between the two covariates and illustrates good overlap in male standard length between levels of the (randomly assigned) feeding treatment.
+
+Another approach to identifying multicollinearity is by calculating a variance inflation factor (VIF) for each variable. The VIF is an estimate of the proportion of variance in one predictor explained by all the other predictors in the model. A VIF of 1 indicates no collinearity. VIF values above 1 indicate increasing degrees of collinearity. VIF values exceeding 3 are considered problematic [@Zuur_2009], in which case the variable with the highest VIF should be removed from the model and the VIFs for the model recalculated.
+
+The VIF for a model can be estimated using the `vif` function from the `car` package:
+
+`round(vif(lm(resp_dist ~ sl + fSupp, data = bitt)),2)`
+
+`r round(vif(lm(resp_dist ~ sl + fSupp, data = bitt)),2)`
+
+For the bitterling model the estimated VIFs are <3, so there is no problem with multicollinearity.
+
+#### Zeros in the response variable
+
+Zeros should not be omitted from a dataset. However, an excess of zeros in the response variable, termed ‘zero inflation’, can cause problems with an analysis. The number of zeros in the response variable can be calculated with:
+
+`sum(bitt$ resp_dist == 0)`
+
+```{r ch4-zeros, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+sum(bitt$ resp_dist == 0)
+```
+
+There are no zeros in the response variable, indicating that all territorial males responded aggressively to intruders.
+
+#### Relationships among dependent and independent variables
+
+Visual inspection of the data using plots is a critical step and will illustrate whether relationships are linear or non-linear and whether there are interactions between covariates. R code for this plot is available in the R script associated with this chapter.
+
+(ref:ch4-rels-bitt) **Multipanel scatterplot of male response distance (cm) and standard length (mm) of European bitterling either without or receiving supplementary feeding with a line of best fit plotted.**
+
+```{r ch4-rels-bitt, fig.cap='(ref:ch4-rels-bitt)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+label_supp <- c("0" = "No supplement", 
+                "1" = "Food supplement")
+bitt %>% 
+  ggplot(aes(x = sl, y = resp_dist, size = 1)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2, colour = "black") +
+  facet_grid(.~ fSupp, 
+             scales = "fixed", space = "fixed", 
+             labeller=labeller (fSupp = label_supp)) +
+  xlab("Male standard length (mm)") + 
+  ylab("Male response distance (cm)") +
+  theme(panel.background = element_blank()) +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "none") +
+  theme(text = element_text(size=14)) +
+  theme(strip.text = element_text(size = 12, face="italic")) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size = 1))
+```
+
+The plot of the data in Fig. \@ref(fig:ch4-rels-bitt) does not indicate a non-linear pattern in the data. However, fitted lines for the relationship between male response distance (cm) and standard length (mm) do suggest that the nature of this relationship may vary with feeding treatment, implying a potential interaction between fish size and feeding treatment; i.e. the slopes differ between treatments. An interaction would mean that the relationship between response distance and standard length depends on nutritional state. Interactions like this one are biologically interesting. Given the pattern in these data, inclusion of an interaction term in the model is justified.
+
+#### Independence of response variable
+
+An assumption for a GLM is that each observation in a dataset is independent of all others. In the case of the present study each row of data was a different male bitterling. The study was conducted over a short period (10 days) at the peak of the spawning season of the species in a single lake, which reduced the risk of any strong temporal and spatial effects. Observations were also made by a single experimenter, limiting the risk of dependency in the data due to variation in observer bias. On this basis, we will assume the data are independent. 
+
+### Selection of a statistical model
+
+The study was designed specifically to understand the extent to which the territorial behaviour of male European bitterling is a function of male size and nutritional state. The dependent variable is male response distance, which the data exploration showed to be continuous and approximately normally distributed (Fig. \@ref(fig:ch4-freqpoly)). There are no zeros in the response variable and there is good reason to believe data are independent. The relationship between male standard length and response distance is approximately linear, irrespective of food supplementation (Fig. \@ref(fig:ch4-rels-bitt)).
+
+Given these findings, a Gaussian is an appropriate distribution as a starting point, in combination with an _identity_ link function (essentially no link function). Two covariates will be included in the model; male standard length (continuous) and food supplementation (categorical, with two levels) as well as their interaction, which means the model will have five parameters; an intercept ($\beta_1$), a slope for standard length ($\beta_2$), food supplementation ($\beta_3$), and the interaction between standard length and food supplementation ($\beta_4$), and the variance ($\sigma^2$) of the normal distribution for male response distance.
+
+In the context of an INLA model, the variance parameter is termed a _hyperparameter_. In a simple linear model the hyperparameter just comprises the model residual variance. However, in more complex models the hyperparameter may also include other variance components, such as the random effects in a mixed model or the smoother in a Generalised Additive Model (GAM).
+
+For computational efficiency, Bayesian analysis uses the precision ($\tau$ or tau) of parameters rather than variance. Precision is the reciprocal of the variance ($\sigma^{2}$), thus:
+
+$\tau$ = $\sigma^{-2}$
+
+Precision plays an important role in manipulating distributions. By default a diffuse gamma prior is assumed for the precision.
+
+
+### Specification of priors
+
+A key aspect of any Bayesian model are the priors placed on model parameters. While there has been a tendency by ecologists to use non-informative or weakly informative priors, carefully formulated informative priors offer a powerful approach to modelling data, taking the modelling process beyond a description of the data and incorporating additional data or previous findings in a model (see Chapter 2).
+
+#### Pilot study {#pilot}
+
+In the study described here, a 2-day pilot experiment was conducted before the main study. This pilot study provided an opportunity for refining data collection methods and to obtain model priors. A total of 8 males were tested in the pilot experiment, with 4 receiving a food supplement and 4 with no supplement. In the pilot study several alternative food supplements were used, which meant the protocol followed was not identical to the main study, though the findings broadly matched the observations from the main study. 
+
+*__Import pilot data__*
+
+Pilot data are saved in the tab-delimited file pilot.txt and are imported into a dataframe in R using the command:
+
+`pilot <- read_tsv("pilot.txt")`
+
+```{r ch4-pilot, cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+pilot <- read_tsv("pilot.txt")
+```
+
+Note we use the `read_tsv()` function from the `readr` package which is part of the `tidyverse` set of packages. 
+
+Start by inspecting the dataframe:
+
+`str(pilot)`
+
+```{r ch4-str-pilot, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+str(pilot)
+```
+
+The dataframe comprises `r nrow(pilot)` observations of `r ncol(pilot)` variables. Each row in the dataframe represents a record for an individual male bitterling. The variables are the numerical variable `order` which represents the order in which the males were tested, the categorical variable `supplement` with two levels; `no` and `yes`, indicating which individuals received a food supplement. The two other variables in the dataframe are `length` and `distance`, corresponding with individual male standard length (mm) and male response distance to an intruder (cm). These are both numerical continuous variables.
+
+#### Frequentist linear model
+
+We will proceed by fitting a simple (frequentist) general linear model (GLM) to obtain parameter estimates to use as priors. The model is fitted as:
+
+`p1 <- lm(distance ~ length + supplement, data = pilot)`
+
+```{r ch4-freq_pilot, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+p1 <- lm(distance ~ length + supplement, data = pilot)
+```
+
+A neat numerical output is obtained with the `tidy` function from the `broom` package:
+
+`broom::tidy(p1)`
+
+```{r ch4-p1-summary, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+broom::tidy(p1)
+```
+
+1. The response distance of males when standard length is zero is approximately 20 cm (sd ~ 40). This is the `intercept`.
+2. A 1 mm increase in male standard length results in an increased response distance of approximately 1.3 cm (sd ~ 0.7). This is the slope of `length`.
+3. Supplementary feeding adjusted the slope (response distance) by approximately 35 cm (sd ~ 15)(`fSupp1`). 
+
+Since we did not include an interaction in the pilot model it will be incorporated as a weakly-informative prior in the Bayesian model.
+
+#### Priors on the fixed effects
+
+These findings can be specified in the model as priors on the fixed effects as: 
+
+$\beta intercept$ ~ _N_(20, 1600) (mean, variance)
+
+$\beta sl$ ~ _N_(1.3, 0.49)
+
+$\beta fSupp$ ~ _N_(35, 225)
+
+$\beta interaction$ ~ _N_(0, 1000)
+
+Thus, in the case of $\beta intercept$, we assume normality with a mean of 20 cm and variance of 1600 (sd = 40) cm.
+
+#### Priors on the hyperparameter
+
+The prior distribution on the hyperparameter should also be specified. The default is a diffuse gamma distribution, but other distributions can be used, for a full list see:
+
+`names(inla.models()$prior)`
+
+In addition to these available prior distributions, it is also possible to define your own. In this model we will use a Gaussian distribution with a weakly-informative prior.
+
+$\sigma$ ~ _N_(0, 1)
+
+Model variance is assumed to be normal, with a mean of 0 and variance of 1.
+
+### Fit the model
+
+We will fit two Bayesian Gaussian GLMs using INLA, one with default priors (`M0`) and the second with informative priors on the fixed effects, derived from the pilot study, and weakly informative priors on the hyperparameter (`M1`).
+
+The default INLA model is fitted with the following script:
+
+`M0 <- inla(resp_dist ~ sl * fSupp, data = bitt)`
+
+```{r ch4-M0, comment = "",  cache = TRUE, echo=FALSE, warning=FALSE, message=FALSE}
+M0 <- inla(resp_dist ~ sl * fSupp, data = bitt)
+```
+
+The default priors used for the model can be obtained with:
+
+`inla.priors.used(M0)`
+
+This output shows that for the fixed effects:
+
+$\beta intercept$ ~ _N_(0, 0) ($\tau$ = 0)
+
+$\beta sl$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta fSupp$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+$\beta interaction$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+And for the hyperparameter:
+
+$\sigma$ ~ loggamma (1, 2 x $10^{5}$) ($\tau$ = 1 x $5^{-6}$)
+
+The model with informative priors is fitted with the following script:
+
+`M1 <- inla(resp_dist ~ sl * fSupp, data = bitt, control.family = list(hyper = list(prec = list(prior = "gaussian", param = c(0, 1)))), control.fixed = list(mean.intercept = 20, prec.intercept = 40^(-2), mean = list(sl = 1.3, fSupp1 = 35, default = 0), prec = list(sl = 0.7^(-2), fSupp1 = 15^(-2), default = 31.62^(-2))))`
+
+```{r ch4-M1, comment = "",  cache = TRUE, echo=FALSE, warning=FALSE, message=FALSE}
+M1 <- inla(resp_dist ~ sl * fSupp, data = bitt, 
+control.family = list(hyper = list(prec = list(prior =   "gaussian", param = c(0, 1)))), 
+control.fixed = list(mean.intercept = 20, prec.intercept = 40^(-2), 
+mean = list(sl = 1.3, fSupp1 = 35, default = 0), 
+prec = list(sl = 0.7^(-2), fSupp1 = 15^(-2), default = 31.62^(-2))))
+```
+
+The priors can be obtained with:
+
+`inla.priors.used(M1)`
+
+This output shows that for the fixed effects:
+
+$\beta intercept$ ~ _N_(20, 1600) ($\tau$ = 6.25 x $10^{-5}$)
+
+$\beta sl$ ~ _N_(1.3, 0.49) ($\tau$ = 2.04)
+
+$\beta fSupp$ ~ _N_(35, 225) ($\tau$ = 4.44 x $10^{-3}$)
+
+$\beta interaction$ ~ _N_(0, 1000) ($\tau$ = 0.001)
+
+And for the hyperparameter:
+
+$\sigma$ ~ _N_(0, 1) ($\tau$ = 1)
+
+### Obtain the posterior distribution
+
+#### Model with default priors
+
+##### Fixed effects
+
+Output from model M0 can be obtained with:
+
+`summary(M0)`
+
+However, this command produces an intimidating cascade of information (not shown here). 
+
+An alternative is to look first at the posterior mean, standard deviation and 95% credible intervals for the fixed effects:
+
+`M0Betas <- M0$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]`
+
+`round(M0Betas, digits = 2)`
+
+```{r ch4-M0-fixed, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M0Betas <- M0$summary.fixed[,c("mean", "sd", 
+                               "0.025quant", 
+                               "0.975quant")]
+round(M0Betas, digits = 2)
+```
+
+This reports the _posterior mean_ and _standard deviation_ for the model intercept (`intercept`), covariates (`sl`, `fSupp1`) and interaction (`sl:fSupp1`). Note that there are no P-values, which are used in frequentist analyses but are meaningless in a Bayesian context. Instead we have the 95% _credible intervals_; these are the 0.025 and 0.975 quantiles in the output above.
+
+For the variable `sl` we have a posterior mean of `r round(M0Betas$'mean'[2], 2)` and lower 95% credible interval of `r round(M0Betas$'0.025quant'[2], 2)` and upper 95% credible interval of `r round(M0Betas$'0.975quant'[2], 2)`. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for `sl` falls between these credible intervals.
+
+Because the credible intervals for `sl` do not encompass zero, we can be confident that the slope of the relationship is greater than zero. That is, we are 95% certain that the true value of the `sl` parameter in our model is between `r round(M0Betas$'0.025quant'[2], 2)` and `r round(M0Betas$'0.975quant'[2], 2)` given the data and (default) prior information provided to the model. In a Bayesian context we cannot consider this result ‘significant’, because significance testing only applies in a frequentist hypothesis testing setting. However, we can conclude that `sl` is _statistically important_ in the default model.
+
+Similarly, we can conclude that the `Intercept` of the relationship, with credible intervals from `r round(M0Betas$'0.025quant'[1], 2)` to `r round(M0Betas$'0.975quant'[1], 2)`, differs from zero with a posterior mean of `r round(M0Betas$'mean'[1], 2)` and standard deviation of `r round(M0Betas$'sd'[1], 2)`.
+
+For supplementary feeding (`fSupp1`), and the interaction between standard length and supplementary feeding (`sl:fSupp1`), the credible intervals range from negative values for the lower credible interval to positive for the upper interval, indicating that these model parameters do not differ from zero.
+
+Instead of just summarising the posterior distribution of the fixed effects with a posterior mean and a 95% credible interval, we can plot the posterior distribution of each parameter, available in the object `M0$marginals.fixed`.
+The posterior distributions can be visualized using `ggplot2`. The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch4-M0-betas) **Posterior and prior distributions for fixed parameters of a Bayesian linear regression to predict the territorial response distance of male European bitterling in response to a rival. The model is fitted with default (non-informative) priors. Distributions for: A. model intercept; B. slope for male standard length; C. slope for supplementary feeding; D. interaction of male standard length and supplementary feeding. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero.**
+
+```{r ch4-M0-betas, fig.cap='(ref:ch4-M0-betas)', fig.align='center', message = FALSE, echo=FALSE, warning=FALSE, fig.dim = c(6, 4), fig.pos = "", out.extra = ""}
+
+# Model intercept (Beta1)
+PosteriorBeta1.M0 <- as.data.frame(M0$marginals.fixed$`(Intercept)`)
+PriorBeta1.M0     <- data.frame(x = PosteriorBeta1.M0[,"x"], 
+                          y = dnorm(PosteriorBeta1.M0[,"x"],0,0))
+Beta1mean.M0 <- M0Betas["(Intercept)", "mean"]
+Beta1lo.M0   <- M0Betas["(Intercept)", "0.025quant"]
+Beta1up.M0   <- M0Betas["(Intercept)", "0.975quant"]
+
+#Create plot object
+beta1 <- PosteriorBeta1.M0 %>% 
+  ggplot(aes(y = y, x = x)) + 
+  annotate("rect", xmin = Beta1lo.M0, xmax = Beta1up.M0,
+                  ymin = 0, ymax = 0.027, fill = "gray88") +
+  geom_line(lwd = 1.2) +
+  geom_line(data = PriorBeta1.M0,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") +
+  ylab("Density") +
+  xlim(-30,140) + 
+  ylim(0,0.027) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.M0, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Male sl (Beta2)
+PosteriorBeta2.M0 <- as.data.frame(M0$marginals.fixed$`sl`)
+PriorBeta2.M0 <- data.frame(x = PosteriorBeta2.M0[,"x"], 
+                         y = dnorm(PosteriorBeta2.M0[,"x"],0,0))
+Beta2mean.M0 <- M0Betas["sl", "mean"]
+Beta2lo.M0   <- M0Betas["sl", "0.025quant"]
+Beta2up.M0   <- M0Betas["sl", "0.975quant"]
+beta2 <- PosteriorBeta2.M0 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta2lo.M0, xmax = Beta2up.M0,
+                  ymin = 0, ymax = 1.5, fill = "gray88") +
+geom_line(data = PosteriorBeta2.M0,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta2.M0,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for standard length") +
+ylab("Density") +
+xlim(-0.5,3.5) + 
+ylim(0,1.5) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta2mean.M0, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                 colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Supplementary feeding (Beta3)
+PosteriorBeta3.M0 <- as.data.frame(M0$marginals.fixed$`fSupp`)
+PriorBeta3.M0     <- data.frame(x = PosteriorBeta3.M0[,"x"],
+                          y = dnorm(PosteriorBeta3.M0[,"x"],0,0))
+Beta3mean.M0 <- M0Betas["fSupp", "mean"]
+Beta3lo.M0   <- M0Betas["fSupp", "0.025quant"]
+Beta3up.M0   <- M0Betas["fSupp", "0.975quant"]
+beta3 <- PosteriorBeta3.M0 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta3lo.M0, xmax = Beta3up.M0,
+                  ymin = 0, ymax = 0.022, fill = "gray88") +
+geom_line(data = PosteriorBeta3.M0,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta3.M0,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for suppl. feeding") +
+ylab("Density") +
+xlim(-50,120) + 
+  ylim(0,0.022) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta3mean.M0, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                 colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# 2-way interaction - `sl:fSupp1`
+PosteriorBeta4.M0 <- as.data.frame(M0$marginals.fixed$`sl:fSupp1`)
+PriorBeta4.M0     <- data.frame(x = PosteriorBeta4.M0[,"x"],
+                          y = dnorm(PosteriorBeta4.M0[,"x"],0,0))
+Beta4mean.M0 <- M0Betas["sl:fSupp1", "mean"]
+Beta4lo.M0   <- M0Betas["sl:fSupp1", "0.025quant"]
+Beta4up.M0   <- M0Betas["sl:fSupp1", "0.975quant"]
+beta4 <- PosteriorBeta4.M0 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta4lo.M0, xmax = Beta4up.M0,
+                  ymin = 0, ymax = 1.18, fill = "gray88") +
+geom_line(data = PosteriorBeta4.M0,
+      aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta4.M0,
+      aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Interaction") +
+ylab("Density") +
+xlim(-2.1,2.1) + ylim(0,1.18) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta4mean.M0, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+# Combine plots
+ggarrange(beta1, beta2, beta3, beta4, labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+```
+
+Figure \@ref(fig:ch4-M0-betas) provides a visual representation of the summary of the fixed effects. For parameters where zero (indicated by the dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is considered statistically important. Thus, the intercept (panel A) and slope for male standard length (panel B) differ from zero and are statistically important, while the slope for supplementary feeding and interaction between standard length and supplementary feeding are not (i.e. panels C and D). This figure also shows the non-informative priors, which appear flat across the range of possible values (hence non-informative priors are sometimes termed ‘flat’ priors), and make a limited contribution to the posterior distribution. 
+
+##### Hyperparameter
+
+Model `M0` contains a parameter, sigma ($\sigma$), that is used for the variance ($\sigma{^2}$) of the normal distribution for male response distance. In the context of an INLA model, the variance parameter is termed a ‘hyperparameter’. In a simple linear model like `M0` the hyperparameter just comprises the model residual variance.
+
+As with the fixed effects, we can put priors on the hyperparameter (or use the non-informative default) but a vital step in fitting a Bayesian model is to examine the posterior distribution of the hyperparameter(s).
+
+Recall that a complication is that INLA uses precision ($\tau$ or tau) rather than the variance of the hyperparameter, though this is simply the reciprocal of the variance.
+
+We can obtain a summary of the precision of the hyperparameter with:
+
+Obtain posterior distribution of precision (tau):
+
+`M0hyp <- M0$summary.hyper[,c("mean", "mode", "0.025quant", "0.975quant")]`
+
+```{r ch4-M0hyp-summary, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M0hyp <- M0$summary.hyper[,c("mean","mode","0.025quant","0.975quant")]
+```
+
+|                           |mean   |mode  |0.025quant|0.975quant|
+|:-------------------------:|:-----:|:----:|:--------:|:--------:|
+|Precision for Gaussian obs |0.004  |0.0038|0.0025   |0.0057    |
+
+The posterior distribution of the precision of the hyperparameter can be visualized using `ggplot2`. See R script associated with this chapter. Because the posterior distribution is not symmetrical, we plot the posterior mode (rather than mean) as a dashed vertical line.
+
+(ref:ch4-M0-hyp-plot) **Posterior and prior distributions for the precision of the hyperparameter of a Bayesian linear regression to predict the territorial response distance of male European bitterling to a rival. The model is fitted with default (non-informative) priors. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mode, the vertical dotted line indicates zero.**
+
+```{r ch4-M0-hyp-plot, fig.cap='(ref:ch4-M0-hyp-plot)', fig.align='center', fig.dim = c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+PosteriorHyp.M0 <- as.data.frame(M0$marginals.hyperpar$
+                   `Precision for the Gaussian observations`)
+PriorHyp.M0 <- data.frame(x = PosteriorHyp.M0[,"x"], 
+                   y = dgamma(PosteriorHyp.M0[,"x"],1,2^5, log = TRUE))
+
+Hypmean.M0 <- M0hyp["Precision for the Gaussian observations", "mode"]
+Hyplo.M0   <- M0hyp["Precision for the Gaussian observations", "0.025quant"]
+Hypup.M0   <- M0hyp["Precision for the Gaussian observations", "0.975quant"]
+
+ggplot() +
+annotate("rect", xmin = Hyplo.M0, xmax = Hypup.M0,
+                  ymin = 0, ymax = 550, fill = "gray88") +
+geom_line(data = PosteriorHyp.M0,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorHyp.M0,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+ylab("Density") +
+xlab(expression(paste("Tau (", tau ,")"))) +
+xlim(0,0.009) + ylim(0,550) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Hypmean.M0, linetype = "dashed") +
+theme(text = element_text(size=15)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                    colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+```
+
+Since we typically do not work with precision, we obtain the posterior distribution of the standard deviation of the hyperparameter (sigma, $\sigma$) with:
+
+`round(bri.hyperpar.summary(M0),2)`
+
+|                             |mean  |mode  |0.025quant|0.975quant|
+|:---------------------------:|:----:|:----:|:--------:|:--------:|
+|SD for Gaussian observations |16.17 |15.69 |13.24     |19.97     |
+
+Visualisation of the posterior distribution of the standard deviation of the hyperparameter can be achieved with `ggplot2` using R script associated with this chapter.
+
+(ref:ch4-M0-brihyp-plot) **Posterior and prior distributions for the standard deviation of the hyperparameter of a Bayesian linear regression to predict the territorial response distance of male European bitterling to a rival. The model is fitted with default (non-informative) priors. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mode.**
+
+```{r ch4-M0-brihyp-plot, fig.cap='(ref:ch4-M0-brihyp-plot)', fig.align='center', fig.dim = c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+M0var <- bri.hyperpar.summary(M0)[,c("mode","q0.025","q0.975")]
+
+Hypvmean.M0 <- M0var["mode"]
+Hypvlo.M0   <- M0var["q0.025"]
+Hypvup.M0   <- M0var["q0.975"]
+
+TauM0   <- M0$marginals.hyperpar$`Precision for the Gaussian observations`
+SigmaM0 <- as.data.frame(inla.tmarginal(function(x) sqrt(1/x), TauM0))
+PriorVar.M0 <- data.frame(x = SigmaM0[,"x"], 
+                          y = dgamma(SigmaM0[,"x"],1,2^(-5)))
+
+ggplot()  +
+annotate("rect", xmin = Hypvlo.M0, xmax = Hypvup.M0,
+                  ymin = 0, ymax = 0.31, fill = "gray88") +
+geom_line(data = SigmaM0,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorVar.M0,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+ylab("Density") +
+xlab(expression(paste("SD (", sigma ,")"))) +
+xlim(10,25) + ylim(0,0.31) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Hypvmean.M0, linetype = "dashed") +
+theme(text = element_text(size=15)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                          colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) 
+
+```
+
+Clearly the standard deviation of the hyperparameter differs from zero (Fig. \@ref(fig:ch4-M0-brihyp-plot)). The distribution is also not normal; the default prior is for a gamma distribution.
+
+#### Model with informative priors
+
+As for the model with default priors, we will examine the posterior distributions for the model with informative priors, starting with the fixed effects.
+
+##### Fixed effects
+
+First examine the posterior mean and 95% credible intervals for the fixed effects:
+
+`M1Betas <- M1$summary.fixed[,c("mean", "sd", "0.025quant", "0.975quant")]` 
+
+`round(M1Betas, digits = 2)`
+
+```{r ch-M1-fixed, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M1Betas <- M1$summary.fixed[,c("mean", "sd", 
+                               "0.025quant", 
+                               "0.975quant")] 
+round(M1Betas, digits = 2)
+```
+
+This reports the posterior mean, standard deviation and 95% credible intervals for the `intercept`, covariates (`sl`, `fSupp1`) and interaction (`sl:fSupp1`). Note that the posterior means differ quantitatively from the default model as do the 95% credible intervals, which encompass a narrower range in each case. 
+
+For the variable `sl` we now have a posterior mean of the slope of `r round(M1Betas$'mean'[2],2)` and lower 95% credible interval of `r round(M1Betas$'0.025quant'[2],2)` and upper 95% credible interval of `r round(M1Betas$'0.975quant'[2],2)`. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for the slope of sl falls between these credible intervals.
+
+We can similarly conclude that the `Intercept` of the relationship differs from zero, with a posterior mean of `r round(M1Betas$'mean'[1],2)` and credible intervals from `r round(M1Betas$'0.025quant'[1],2)` to `r round(M1Betas$'0.975quant'[1],2)`.
+
+For supplementary feeding (`fSupp1`), in contrast to the model with non-informative priors, the parameter is statistically important, with a posterior mean of `r round(M1Betas$'mean'[3],2)` and 95% credible intervals from `r round(M1Betas$'0.025quant'[3],2)` to `r round(M1Betas$'0.975quant'[3],2)`. 
+
+In the case of the interaction between standard length and supplementary feeding (`sl:fSupp1`) the credible intervals range from negative values for the lower interval (`r round(M1Betas$'0.025quant'[4],2)`) to positive for the upper interval (`r round(M1Betas$'0.975quant'[4],2)`), indicating that this model parameter does not differ from zero.
+
+The posterior distributions of the fixed effects can be visualized using ggplot2. The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch4-M1-betas) **Posterior and prior distributions for fixed parameters of a Bayesian linear regression to predict the territorial response distance of male European bitterling (_Rhodeus amarus_) in response to a rival fitted with informative priors. Distributions for: A. model intercept; B. slope for male standard length; C. slope for supplementary feeding; D. interaction of male standard length and supplementary feeding. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is considered statistically important (i.e. in the case of panels A, B and C).**
+
+```{r ch4-M1-betas, fig.cap='(ref:ch4-M1-betas)', fig.align='center', fig.dim = c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PosteriorBeta1.M1 <- as.data.frame(M1$marginals.fixed$`(Intercept)`)
+PriorBeta1.M1     <- data.frame(x = PosteriorBeta1.M1[,"x"], 
+                          y = dnorm(PosteriorBeta1.M1[,"x"],20,40))
+Beta1mean.M1 <- M1Betas["(Intercept)", "mean"]
+Beta1lo.M1   <- M1Betas["(Intercept)", "0.025quant"]
+Beta1up.M1   <- M1Betas["(Intercept)", "0.975quant"]
+
+#Create plot object
+beta1 <- PosteriorBeta1.M1 %>% 
+  ggplot(aes(y = y, x = x)) + 
+  annotate("rect", xmin = Beta1lo.M1, xmax = Beta1up.M1,
+                  ymin = 0, ymax = 0.035, fill = "gray88") +
+  geom_line(lwd = 1.2) +
+  geom_line(data = PriorBeta1.M1,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+  xlab("Intercept") +
+  ylab("Density") +
+  xlim(-30,140) + 
+  ylim(0,0.035) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = Beta1mean.M1, linetype = "dashed") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Male sl (Beta2)
+PosteriorBeta2.M1 <- as.data.frame(M1$marginals.fixed$`sl`)
+PriorBeta2.M1 <- data.frame(x = PosteriorBeta2.M1[,"x"], 
+                         y = dnorm(PosteriorBeta2.M1[,"x"],1.3,0.7))
+Beta2mean.M1 <- M1Betas["sl", "mean"]
+Beta2lo.M1   <- M1Betas["sl", "0.025quant"]
+Beta2up.M1   <- M1Betas["sl", "0.975quant"]
+
+beta2 <- PosteriorBeta2.M1 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta2lo.M1, xmax = Beta2up.M1,
+                  ymin = 0, ymax = 1.8, fill = "gray88") +
+geom_line(data = PosteriorBeta2.M1,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta2.M1,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for Standard Length") +
+ylab("Density") +
+xlim(-0.5,3.5) + ylim(0,1.8) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta2mean.M1, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                 colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Supplementary feeding (Beta3)
+PosteriorBeta3.M1 <- as.data.frame(M1$marginals.fixed$`fSupp`)
+PriorBeta3.M1     <- data.frame(x = PosteriorBeta3.M1[,"x"],
+                          y = dnorm(PosteriorBeta3.M1[,"x"],35,25))
+
+Beta3mean.M1 <- M1Betas["fSupp", "mean"]
+Beta3lo.M1   <- M1Betas["fSupp", "0.025quant"]
+Beta3up.M1   <- M1Betas["fSupp", "0.975quant"]
+
+beta3 <- PosteriorBeta3.M1 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta3lo.M1, xmax = Beta3up.M1,
+                  ymin = 0, ymax = 0.035, fill = "gray88") +
+geom_line(data = PosteriorBeta3.M1,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta3.M1,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Slope for suppl. feeding") +
+ylab("Density") +
+xlim(-50,120) + ylim(0,0.035) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta3mean.M1, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                 colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# 2-way interaction - `sl:fSupp1`
+PosteriorBeta4.M1 <- as.data.frame(M1$marginals.fixed$`sl:fSupp1`)
+PriorBeta4.M1     <- data.frame(x = PosteriorBeta4.M1[,"x"],
+                          y = dnorm(PosteriorBeta4.M1[,"x"],0,31.62))
+Beta4mean.M1 <- M1Betas["sl:fSupp1", "mean"]
+Beta4lo.M1   <- M1Betas["sl:fSupp1", "0.025quant"]
+Beta4up.M1   <- M1Betas["sl:fSupp1", "0.975quant"]
+
+beta4 <- PosteriorBeta4.M1 %>% 
+  ggplot() +
+annotate("rect", xmin = Beta4lo.M1, xmax = Beta4up.M1,
+                  ymin = 0, ymax = 1.8, fill = "gray88") +
+geom_line(data = PosteriorBeta4.M1,
+      aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorBeta4.M1,
+      aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+xlab("Interaction") +
+ylab("Density") +
+xlim(-2.1,2.1) + ylim(0,1.8) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Beta4mean.M1, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(beta1, beta2, beta3, beta4,
+                        labels = c("A", "B", "C", "D"),
+                        ncol = 2, nrow = 2)
+```
+
+Figure \@ref(fig:ch4-M1-betas) indicates that for model M1 the intercept, slope for male standard length and slope for supplementary feeding all differ from zero and are statistically important in the model. The interaction between standard length and supplementary feeding is not. This figure also shows the distributions of the informative priors, based on the pilot study described in Section \@ref(pilot). These informative priors influence the posterior distribution. 
+
+##### Hyperparameter
+
+A summary of the precision of the hyperparameter for the informative model is obtained with:
+
+`M1hyp <- M1$summary.hyper[,c("mean", "mode", "0.025quant", "0.975quant")]`
+
+```{r ch4-hyper-M1, cache = TRUE, comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+M1hyp <- M1$summary.hyper[,c("mean","mode","0.025quant","0.975quant")]
+```
+
+|                           |mean  |mode  |0.025quant|0.975quant|
+|:-------------------------:|:----:|:----:|:--------:|:--------:|
+|Precision for Gaussian obs |0.0048|0.0046|0.0032    |0.0066    |
+
+The posterior distribution of the precision of the hyperparameter can be visualized using ggplot2. The coding for this plot is available in the R script associated with this chapter.
+
+(ref:ch4-M1-hyp-plot) **Posterior distribution for the precision of the hyperparameter of a Bayesian linear regression to predict the territorial response distance of male European bitterling to a rival. The model is fitted with a weakly informative prior on the hyperparameter. The solid black line is the posterior distribution, solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mode, the vertical dotted line indicates zero.**
+
+```{r ch4-M1-hyp-plot, fig.cap='(ref:ch4-M1-hyp-plot)', fig.align='center', fig.dim = c(5, 3), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Plot posterior distribution of precision (tau)
+PosteriorHyp.M1 <- as.data.frame(M1$marginals.hyperpar$
+                   `Precision for the Gaussian observations`)
+PriorHyp.M1 <- data.frame(x = PosteriorHyp.M1[,"x"], 
+                        y = dnorm(PosteriorHyp.M1[,"x"],0,1))
+Hypmean.M1 <- M1hyp["Precision for the Gaussian observations", "mode"]
+Hyplo.M1   <- M1hyp["Precision for the Gaussian observations", "0.025quant"]
+Hypup.M1   <- M1hyp["Precision for the Gaussian observations", "0.975quant"]
+
+ggplot() +
+annotate("rect", xmin = Hyplo.M1, xmax = Hypup.M1,
+                  ymin = 0, ymax = 510, fill = "gray88") +
+geom_line(data = PosteriorHyp.M1,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorHyp.M1,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+ylab("Density") +
+xlab(expression(paste("Tau (", tau ,")"))) +
+xlim(0,0.009) + ylim(0,510) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Hypmean.M1, linetype = "dashed") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                         colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+```
+
+While informative priors were put on fixed effects in the model, a weakly informative prior was put on the hyperparameter; evident in the prior distribution in Fig. \@ref(fig:ch4-M1-hyp-plot). The 95% credible intervals of the posterior distribution of the hyperparameter do not include zero.
+
+Because we typically do not work with precision, it is helpful to obtain the posterior distribution of the standard deviation of the hyperparameter (sigma, $\sigma$) with:
+
+`round(bri.hyperpar.summary(M1),2)`
+
+|                             |mean  |mode  |0.025quant|0.975quant|
+|:---------------------------:|:----:|:----:|:--------:|:--------:|
+|SD for Gaussian observations |14.67 |14.30 |14.56     |17.67     |
+
+Visualisation of the posterior distribution of the standard deviation of the hyperparameter can be accomplished with `ggplot2` using R script associated with this chapter.
+
+(ref:ch4-M1-bri-plot) **Posterior and prior distributions for the standard deviation of the hyperparameter of a Bayesian linear regression to predict the territorial response distance of male European bitterling to a rival. The model is fitted with a weakly informative prior on the hyperparameter. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mode.**
+
+```{r ch4-M1-bri-plot, fig.cap='(ref:ch4-M1-bri-plot)', fig.align='center', fig.dim = c(5, 3), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+M1var <- bri.hyperpar.summary(M1)[,c("mean","mode","q0.025","q0.975")]
+Hypvmean.M1 <- M1var["mode"]
+Hypvlo.M1   <- M1var["q0.025"]
+Hypvup.M1   <- M1var["q0.975"]
+
+TauM1 <- M1$marginals.hyperpar$`Precision for the Gaussian observations`
+SigmaM1 <- as.data.frame(inla.tmarginal(function(x) sqrt(1/x), TauM1))
+PriorVar.M1 <- data.frame(x = SigmaM1[,"x"], 
+                          y = dnorm(SigmaM1[,"x"],0,1))
+
+ggplot() +
+annotate("rect", xmin = Hypvlo.M1, xmax = Hypvup.M1,
+                  ymin = 0, ymax = 0.33, fill = "gray88") +
+geom_line(data = SigmaM1,
+                   aes(y = y, x = x), lwd = 1.2) +
+geom_line(data = PriorVar.M1,
+                   aes(y = y, x = x), color = "gray55", lwd = 1.2) +
+ylab("Density") +
+xlab(expression(paste("SD (", sigma ,")"))) +
+xlim(10,20) + ylim(0,0.33) +
+geom_vline(xintercept = 0, linetype = "dotted") +
+geom_vline(xintercept = Hypvmean.M1, linetype = "dashed") +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+```
+
+The standard deviation of the standard deviation of the hyperparameter differs from zero (Fig. \@ref(fig:ch4-M0-brihyp-plot)).
+
+#### Comparison with frequentist Gaussian GLM
+
+At this stage it is instructive to compare the results of the Bayesian Gaussian GLMs with the same model fitted in a frequentist setting. Execution of the model in a frequentist framework can be performed with:
+
+`Freq <- lm(resp_dist ~ sl * fSupp, data = bitt)`
+
+The results are obtained with:
+
+`broom::tidy(Freq)%>% mutate_if(is.numeric, round, 4)`
+
+```{r ch4-comp_freq, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+Freq <- lm(resp_dist ~ sl * fSupp, data = bitt)
+
+broom::tidy(Freq)%>% mutate_if(is.numeric, round, 4)
+```
+
+We already have the results for the Bayesian models; for the model with default priors these are:
+
+`round(M0Betas, digits = 2)`
+
+```{r ch4-betas-M0, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+round(M0Betas, digits = 2)
+```
+
+For the Bayesian model with informative priors:
+
+`round(M1Betas, digits = 2)`
+
+```{r ch4-betas-M1, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+round(M1Betas, digits = 2)
+```
+
+These results can be summarised together in a table:
+
+Table 4.1: **Parameters for fixed effects of a model to investigate the effect of standard length (sl) and supplementary feeding treatment (fSupp) and their interaction on the territorial response distance of male European bitterling for a frequentist GLM, Bayesian GLM with default priors and Bayesian GLM with informative priors. Mean (sd) parameter estimates are shown for each model**
+
+
+|Model                 |Intercept |sl      |fSupp     |sl : fSupp1|
+|:---------------------|:--------:|:------:|:--------:|:-------:|
+|Frequentist           |47.7(18.8)|2.0(0.4)|59.1(28.9)|-0.6(0.6)|
+|Bayesian (default)    |59.1(17.0)|1.8(0.3)|32.4(21.5)|-0.1(0.4)|
+|Bayesian (informative)|55.3(12.5)|1.8(0.2)|40.5(12.4)|-0.2(0.3)|
+
+While parameter estimates for the frequentist and Bayesian models are broadly similar, it is notable that results for the Bayesian model with default (non-informative) priors diverge more from the results for the frequentist model than do the parameter estimates for the Bayesian model with informative priors.
+
+It is a common misconception that non-informative priors are objective and provide an unbiased representation of the data. However, ‘non-informative’ is a misnomer, because all priors influence model outcomes. In a Bayesian framework, the implementation of carefully specified informative priors will typically be more likely to generate robust results than reliance on default priors.
+
+We can also compare the standard deviation of the residuals (sigmas) for these models.
+
+For the Frequentist model:
+
+`round(summary(Freq)$sigma,2)`
+`r round(summary(Freq)$sigma,2)`
+
+For the Bayesian model with default priors:
+
+`round(bri.hyperpar.summary(M0)[,c("mean")],2)`
+`r round(bri.hyperpar.summary(M0)[,c("mean")],2)`
+
+For the Bayesian model with informative priors:
+
+`round(bri.hyperpar.summary(M1)[,c("mean")],2)`
+`r round(bri.hyperpar.summary(M1)[,c("mean")],2)`
+
+Estimates of sigma are almost identical for the frequentist and Bayesian model with default priors. The greater precision of the Bayesian model with informative priors is reflected by a smaller sigma. 
+
+### Conduct model checks
+
+After model fitting and obtaining the posterior distributions, an important next step is validation of the model through model checks. At this stage we may also wish to perform model selection.
+
+#### Model selection using the Deviance Information Criterion (DIC)
+
+When a model is fitted with several explanatory variables, including interaction terms, we have the opportunity to conduct _model selection_. Model selection involves finding an optimal set of covariates for a model. It is a hotly debated subject in statistics, with several alternative approaches. Here we present a simple model selection procedure for models `M0` and `M1`. A more sophisticated model selection procedure using an Information Theoretic (IT) approach is presented in Chapter 5.
+
+In a frequentist setting a common approach to model selection is to use classical backward or forward stepwise model selection based on the Akaike Information Criteria (AIC). AIC measures goodness of fit and model complexity, with the lower the AIC score, the better the fit of the model to the data, penalised by model complexity. In backward model selection, a model with all covariates is fitted and then sequential deletion of covariates is undertaken until removal of further covariates fails to improve the fit of the model. In forward selection this procedure is reversed.
+
+In a Bayesian framework the Deviance Information Criterion (DIC) can similarly be used to compare model goodness-of-fit while penalising model complexity. Like AIC, a smaller DIC score indicates a better fit of the model to the data given its complexity.
+
+A model’s DIC score can be computed in INLA using the `dic = TRUE` option in `control.compute`. For model `M0`:
+
+`M0 <- inla(resp_dist ~ sl * fSupp, control.compute = list(dic = TRUE), data = bitt)`
+                       
+And the same can be computed for `M1`.
+
+For `INLA` there is no stepwise model selection procedure (such as the `drop1` and `step` functions for frequentist GLMs), which means model selection must be conducted manually.
+
+The goal in conducting model selection in this case is twofold:
+
+1. Compare full and reduced models for models with non-informative and informative priors.
+
+2. Compare best-fitting models with non-informative and informative priors.
+
+Start by sequentially removing model parameters from `M0` and then compare using the DIC:
+                 
+The full model:
+
+`M0.full <- inla(resp_dist ~ sl * fSupp, control.compute = list(dic = TRUE), data = bitt)`
+                            
+Drop interaction:
+
+`M0.1 <- inla(resp_dist ~ sl + fSupp, control.compute = list(dic = TRUE), data = bitt)`
+                         
+Drop supplementary feeding:
+
+`M0.2 <- inla(resp_dist ~ sl, control.compute = list(dic = TRUE), data = bitt)`
+                         
+Drop standard length:
+
+`M0.3 <- inla(resp_dist ~ fSupp, control.compute = list(dic = TRUE), data = bitt)`
+                         
+Compare with the DIC:
+
+`DIC <- cbind(c(M0.full$dic$dic, M0.1$dic$dic, M0.2$dic$dic,    M0.3$dic$dic))`
+`rownames(DIC) <- c("full","no inter","no suppl","no sl")`
+`round(DIC,1)`           
+
+```{r ch4-DIC-def,cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+# Full model with default priors
+M0.full <- inla(resp_dist ~ sl * fSupp,
+                            control.compute = list(dic = TRUE),
+                            data = bitt)
+# Model with default priors with interaction dropped
+M0.1 <- inla(resp_dist ~ sl + fSupp,
+                         control.compute = list(dic = TRUE),
+                         data = bitt)
+# Model with default priors with supplementary feeding dropped
+M0.2 <- inla(resp_dist ~ sl,
+                         control.compute = list(dic = TRUE),
+                         data = bitt)
+# Model with default priors with standard length dropped
+M0.3 <- inla(resp_dist ~ fSupp,
+                         control.compute = list(dic = TRUE),
+                         data = bitt)
+
+# Compare models with DIC
+DIC <- cbind(c(M0.full$dic$dic, M0.1$dic$dic, 
+           M0.2$dic$dic,    M0.3$dic$dic))
+#DIC <- cbind(M0dic)
+rownames(DIC) <- c("full","no inter","no suppl","no sl")
+colnames(DIC) <- "DIC"
+round(DIC,1)
+```
+
+The model without an interaction generates the lowest DIC score (`r round(min(DIC), 1)`). This score is only marginally lower than the score for the full model with the interaction, which is an indication that the interaction is not important in the model. A difference in DIC scores of between 5 and 10 would be considered substantial. 
+
+Following the same procedure with model M1 (see R script associated with this chapter) yields:
+
+```{r ch4-DIC-inf,cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+# Now with informative priors
+M1.full <- inla(resp_dist ~ sl * fSupp,  data = bitt,
+           control.compute = list(dic = TRUE),
+           control.family = list(hyper =
+                                   list(prec = list(prior = "gaussian", 
+                                                    param = c(0, 1)))),
+           control.fixed = list(mean.intercept = 20,
+                                prec.intercept = 40^(-2),
+                                mean = list(sl = 1.3, 
+                                            fSupp1 = 35,
+                                            default = 0), 
+                                prec = list(sl = 0.7^(-2), 
+                                            fSupp1 = 15^(-2),
+                                            default = 1000)))
+
+M1.1 <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+                control.compute = list(dic = TRUE),
+                control.family = list(hyper =
+                                        list(prec = list(prior = "gaussian", 
+                                                         param = c(0, 1)))),
+                control.fixed = list(mean.intercept = 20,
+                                     prec.intercept = 40^(-2),
+                                     mean = list(sl = 1.3, 
+                                                 fSupp1 = 35,
+                                                 default = 0), 
+                                     prec = list(sl = 0.7^(-2), 
+                                                 fSupp1 = 15^(-2),
+                                                 default = 1000)))
+
+M1.2 <- inla(resp_dist ~ sl,  data = bitt,
+                control.compute = list(dic = TRUE),
+                control.family = list(hyper =
+                                        list(prec = list(prior = "gaussian", 
+                                                         param = c(0, 1)))),
+                control.fixed = list(mean.intercept = 20,
+                                     prec.intercept = 40^(-2),
+                                     mean = list(sl = 1.3, 
+                                                 fSupp1 = 35,
+                                                 default = 0), 
+                                     prec = list(sl = 0.7^(-2), 
+                                                 fSupp1 = 15^(-2),
+                                                 default = 1000)))
+
+M1.3 <- inla(resp_dist ~ fSupp,  data = bitt,
+                control.compute = list(dic = TRUE),
+                control.family = list(hyper =
+                                        list(prec = list(prior = "gaussian", 
+                                                         param = c(0, 1)))),
+                control.fixed = list(mean.intercept = 20,
+                                     prec.intercept = 40^(-2),
+                                     mean = list(sl = 1.3, 
+                                                 fSupp1 = 35,
+                                                 default = 0), 
+                                     prec = list(sl = 0.7^(-2), 
+                                                 fSupp1 = 15^(-2),
+                                                 default = 1000)))
+
+DIC1 <- cbind(c(M1.full$dic$dic, M1.1$dic$dic, 
+           M1.2$dic$dic,    M1.3$dic$dic))
+#DIC1 <- cbind(M1dic)
+rownames(DIC1) <- c("full","no inter","no suppl","no sl")
+colnames(DIC1) <- "DIC"
+round(DIC1,1)
+```
+
+In this case the full model, with an interaction, generates the lowest DIC score (`r round(min(DIC1), 1)`). However, as in the case above, this score is only marginally lower than the score for the model without the interaction, which tells us that the interaction is not important.
+
+We can conclude that both for the model with non-informative and informative priors that the best-fitting model in each case is the one that includes both `sl` and `fSupp`,  but with no interaction between them.
+
+We can now compare the best-fitting models with non-informative and informative priors using the DIC:
+
+`DIC2 <- cbind(c(M0.1$dic$dic, M1.1$dic$dic))`
+
+`rownames(DIC2) <- c("default priors","informative priors")`
+
+`colnames(DIC2) <- "DIC"`
+
+`round(DIC2,2)`
+
+```{r ch4-M0M1-comp, cache = TRUE,  comment = "", echo=FALSE, warning=FALSE, message=FALSE}
+# Compare best-fitting models with non-informative and informative priors
+DIC2 <- cbind(c(M0.1$dic$dic, M1.1$dic$dic))
+colnames(DIC2) <- "DIC"
+rownames(DIC2) <- c("default priors","informative priors")
+round(DIC2,2)
+```
+
+These DIC score are essentially the same. 
+
+Given the similarity in goodness-of-fit of both these models, what should we do? Since the DIC scores for both models are essentially the same, the appropriate course is to continue with model checking for both and present the findings for both models. For brevity, however, we will continue by examining the model with informative priors only.
+
+#### Posterior predictive checks
+
+The purpose of posterior predictive checks is to assess if a model generates realistic predictions. It does this by drawing simulated estimates from the joint posterior predictive distribution and comparing them with observed data. Any departure of the simulated data from the observed data will reflect problems with the model. Ideally simulated data will match the observed. This matching is performed with a posterior predictive p-value. If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar. However, if a posterior predictive p-value is close to 1 it means the model prediction is too high, if close to zero, the model prediction is too low. A frequency plot of posterior predictive p-values should show a distribution centred around 0.5.
+
+In `INLA` the posterior predictive p-value can be obtained with the function `inla.pmarginal()`. See the R script associated with this chapter for estimating and plotting the posterior predictive p-values for the Bayesian model with informative priors without interaction.
+
+(ref:ch4-post-p) **Frequency histogram of the posterior predictive p-values for the best-fitting Bayesian linear regression with informative priors to predict the territorial response distance of male European bitterling to a rival. The vertical dotted line indicates 0.5.**
+
+```{r ch4-post-p, fig.cap='(ref:ch4-post-p)', fig.align='center', fig.dim=c(6, 4), cache=TRUE, message=FALSE, echo=FALSE, warning=FALSE}
+
+# B. Posterior predictive check
+# (Just for model with informative priors)
+M1.pred <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+                control.predictor = list(link = 1,
+                                      compute = TRUE),
+                control.compute = list(dic = TRUE, 
+                                       cpo = TRUE),
+               control.family = list(hyper =
+                                 list(prec = list(prior = "gaussian",
+                                                  param = c(0,1)))),
+                control.fixed = list(mean.intercept = 20,
+                                     prec.intercept = 40^(-2),
+                                     mean = list(sl = 1.3, 
+                                             fSupp1 = 35,
+                                            default = 0), 
+                                     prec = list(sl = 0.7^(-2), 
+                                             fSupp1 = 15^(-2),
+                                            default = 1000)))
+
+ppp <- vector(mode = "numeric", length = nrow(bitt))
+for(i in (1:nrow(bitt))) {
+  ppp[i] <- inla.pmarginal(q = bitt$resp_dist[i],
+                    marginal = M1.pred$marginals.fitted.values[[i]])
+}
+
+# Fig. 4.11 
+ggplot() +
+geom_histogram(aes(ppp), binwidth = 0.1, 
+                    colour = "black", fill = "gray88") +
+xlab("Posterior predictive p-values") +
+ylab("Frequency") +
+geom_vline(xintercept = 0.5, linetype = "dotted") +
+theme(text = element_text(size=15))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                         colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) 
+```
+
+The frequency histogram of posterior predictive p-values in Fig. \@ref(fig:ch4-post-p) shows that most values are close to zero or 1, with few close to 0.5, which indicates the model check has not been satisfied; the data are overdispersed compared to the model. Consequently, we will proceed with further model checks.
+
+#### Cross-validation model checking
+
+Cross validation is a model-checking approach that examines how well a model is able to generalise to new data. Leave-one-out cross validation (LOO-CV) involves systematically dropping a single data point, refitting the model and evaluating the altered model inference. Following [@Wang_2018], we use the _conditional predictive ordinate_ (CPO) and _probability integral transform_ (PIT) to evaluate model goodness-of-fit. To obtain both we simply run the model using the `cpo = TRUE` option in `control.compute`.
+
+To ensure there are no potential numerical problems in estimating CPO or PIT for a given model, we first run the following check:
+
+`sum(M1.pred$cpo$failure)`
+
+`r sum(M1.pred$cpo$failure)`
+
+An outcome of zero indicates no problems with the computation of CPO or PIT. A value of 1 would indicate CPO or PIT were unreliable.
+
+Plotting PIT values will indicate whether the predictive distributions match the data, apparent as a uniform distribution. We can assess uniformity visually with a frequency histogram and Q-Q plot of PIT values for a uniform distribution (see the R script associated with this chapter).
+
+(ref:ch4-PIT) **A. Frequency histogram; B. Uniform Q-Q plot with confidence bands (shaded gray), for cross-validated probability integral transform (PIT) values for the best-fitting Bayesian linear regression with informative priors.**
+
+```{r ch4-PIT, fig.cap='(ref:ch4-PIT)', fig.align='center', fig.dim=c(6, 4), cache=TRUE, message=FALSE, echo=FALSE, warning=FALSE}
+
+#Extract pit values
+PIT <- (M1.pred$cpo$pit)
+
+#And plot
+Pit1 <- ggplot() +
+geom_histogram(aes(PIT), binwidth = 0.11, 
+                        colour = "black", fill = "gray88") +
+xlab("PIT") +
+ylab("Frequency") +
+theme(text = element_text(size=13))  +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1)) 
+
+
+Pit2 <- ggplot(mapping = aes(sample = M1.pred$cpo$pit)) +
+      stat_qq_band(distribution = "unif", alpha = 0.5) +
+      stat_qq_line(distribution = "unif", qprobs = c(0.1, 0.9)) +
+      stat_qq_point(distribution = "unif", size = 2.5, alpha = 0.7) +
+      xlab("Theoretical quantiles") + ylab("Sample quantiles") +
+      theme(text = element_text(size=13)) +
+      theme(panel.background = element_blank()) +
+      theme(panel.border = element_rect(fill = NA, 
+                  colour = "black", size = 1)) +
+      theme(strip.background = element_rect
+           (fill = "white", color = "white", size = 1))
+
+
+# Combine plots
+ggarrange(Pit1, Pit2,
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+```
+
+The frequency histogram of PIT values in Fig. \@ref(fig:ch4-PIT) A shows that the distribution is broadly uniform, with no clustering of values at zero or 1. This conclusion is supported by the Q-Q plot (Fig. \@ref(fig:ch4-PIT) B), which shows that the PIT values match a uniform distribution.
+
+#### Bayesian residuals analysis
+
+Homogeneity of residual variance can be assessed visually by plotting model residual variance against fitted values as well as each variable in the model (see the R script associated with this chapter).
+
+(ref:ch4-resids) **Bayesian residuals plotted against: A. fitted values ; B. male standard length; and C. supplementary feeding, to assess homogeneity of residual variance.**
+
+```{r ch4-resids, fig.cap='(ref:ch4-resids)', fig.align='center', fig.dim=c(6, 4), cache=TRUE, message=FALSE, echo=FALSE, warning=FALSE}
+
+Fit <- M1.pred$summary.fitted.values[, "mean"]
+
+# Calculate residuals
+Res <- bitt$resp_dist - Fit
+ResPlot <- cbind.data.frame(Fit,Res,bitt$sl,bitt$fSupp)
+
+# Plot residuals against fitted
+Fig.A <- ggplot(ResPlot, aes(x=Fit, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("Bayesian residuals") + xlab("Fitted values") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# And plot residuals against variables in the model
+Fig.B <- ggplot(ResPlot, aes(x=bitt$sl, y=Res)) + 
+  geom_point(shape = 19, size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Male SL (mm)") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+Fig.C <- ggplot(ResPlot, aes(x=bitt$fSupp, y=Res)) + 
+  geom_boxplot(fill='gray88', color="black") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ylab("") + xlab("Suppl. feeding") +
+  theme(text = element_text(size=13)) +
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    colour = "black", size = 1)) +
+  theme(strip.background = element_rect
+        (fill = "white", color = "white", size = 1))
+
+# Combine plots
+ggarrange(Fig.A, Fig.B, Fig.C,
+                    labels = c("A", "B", "C"),
+                    ncol = 3, nrow = 1)
+```
+
+Ideally, the distribution of residuals around zero should be random along the horizontal axis, which is the case in Fig. \@ref(fig:ch4-resids) A and B, and in the case of a categorical variable, the median of a boxplot of residual values should be approximately zero, which is the case in Fig. \@ref(fig:ch4-resids) C.
+
+#### Prior sensitivity analysis
+
+A final Bayesian model check is to examine prior distributions through a sensitivity analysis. This procedure is important both in the case of non-informative and informative priors. The procedure involves systematically changing prior distributions and examining the magnitude of outcome for the posterior distribution. 
+
+To investigate the impact of different priors, we increased and decreased priors on the fixed effects by 20% and examined the outcome for the posterior mean.
+
+The original priors for the fixed effects were:
+
+$\beta intercept$ ~ _N_(20, 1600) 
+
+$\beta sl$ ~ _N_(1.3, 0.49) 
+
+$\beta fSupp1$ ~ _N_(35, 225) 
+
+In the case of an increase by 20%, the priors for the fixed effects are:
+
+$\beta intercept$ ~ _N_(24, 1920) 
+
+$\beta sl$ ~ _N_(1.56, 0.59) 
+
+$\beta fSupp1$ ~ _N_(42, 270) 
+
+In the case of a decrease by 20%, the priors for the fixed effects are:
+
+$\beta intercept$ ~ _N_(16, 1280) 
+
+$\beta sl$ ~ _N_(1.04, 0.39) 
+
+$\beta fSupp1$ ~ _N_(28, 180) 
+
+Two alternative models were fitted with these increases and decreases in the priors and estimates for the betas obtained (see the R script associated with this chapter).
+
+```{r ch4-sense, cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model with priors unchanged
+M1.inform <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+                control.predictor = list(link = 1,
+                                         compute = TRUE),
+                control.compute = list(dic = TRUE, 
+                                       cpo = TRUE),
+                control.family = list(hyper =
+                                        list(prec = list(prior = "gaussian",
+                                                         param = c(0,1)))),
+                control.fixed = list(mean.intercept = 20,
+                                     prec.intercept = 40^(-2),
+                                     mean = list(sl = 1.3, 
+                                             fSupp1 = 35,
+                                            default = 0), 
+                                     prec = list(sl = 0.7^(-2), 
+                                             fSupp1 = 15^(-2),
+                                            default = 1000)))
+
+#Obtain estimates of betas
+Betas.Inform <- M1.inform$summary.fixed[,c("mean", 
+                                           "0.025quant", 
+                                           "0.975quant")]
+
+# Model with priors increased by 20%
+M1.plus20 <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+           control.predictor = list(compute = TRUE),
+             control.compute = list(dic = TRUE, 
+                                    cpo = TRUE),
+            control.family = list(hyper =
+                 list(prec = list(prior = "gaussian",
+                                  param = c(0,1)))),
+           control.fixed = list(mean.intercept = 24,
+                                prec.intercept = 43.8^(-2),
+                                mean = list(sl = 1.56, 
+                                        fSupp1 = 42,
+                                       default = 0), 
+                                prec = list(sl = 0.77^(-2), 
+                                        fSupp1 = 16.4^(-2),
+                                       default = 1000)))
+
+#Obtain estimates of betas
+Betas.plus20 <- M1.plus20$summary.fixed[,c("mean", 
+                                           "0.025quant", 
+                                           "0.975quant")] 
+
+# Model with priors decreased by 20%
+M1.minus20 <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+                   control.predictor = list(compute = TRUE),
+                   control.compute = list(dic = TRUE, 
+                                          cpo = TRUE),
+                   control.family = list(hyper =
+                                           list(prec = list(prior = "gaussian",
+                                                            param = c(0,1)))),
+                   control.fixed = list(mean.intercept = 16,
+                                        prec.intercept = 35.8^(-2),
+                                        mean = list(sl = 1.04, 
+                                                    fSupp1 = 28,
+                                                    default = 0), 
+                                        prec = list(sl = 0.62^(-2), 
+                                                    fSupp1 = 13.4^(-2),
+                                                    default = 1000)))
+
+#Obtain estimates of betas
+Betas.minus20 <- M1.minus20$summary.fixed[,c("mean",
+                                             "0.025quant", 
+                                             "0.975quant")]
+```
+
+Table 4.2: **Sensitivity analysis for a 20% increase and decrease in priors on fixed effects and the % change in the posterior mean.**
+
+|Parameter|% prior|Mean|0.025CI|0.975CI|% posterior|
+|:--------|:----:|:--:|:-----:|:-----:|:--------:|
+|         | +20  |57.6|33.5   |81.5   |-1.68     |
+|Intercept| 0    |58.6|34.9   |82.1   |0         |
+|         | -20  |60.0|37.0   |83.0   |2.44      |
+|         |      |    |       |       |          |
+|         | +20  |1.8 |1.3    |2.2    |0.92      |
+|sl       | 0    |1.8 |1.3    |2.2    |0         |
+|         | -20  |1.7 |1.3    |2.2    |-1.35     |
+|         |      |    |       |       |          |
+|         | +20  |30.3|22.2   |38.5   |1.18      |
+|fSupp1 | 0    |30.0|21.9   |38.1   |0         |
+|         | -20  |29.4|21.4   |37.5   |-1.69     |
+
+The results of the prior sensitivity analysis show that changes as large as 20% (increase and decrease) result in negligible changes to the posterior distribution.
+
+We can plot the posterior distributions of these alternative models to visualise the changes (see R script associated with this chapter).
+
+(ref:ch4-plot-pos) **Posterior distributions for parameters of a Bayesian linear regression to predict the territorial response distance of male European bitterling in response to a rival. Distributions for: A. model intercept; B. slope for male standard length; C. slope for supplementary feeding; D. hyperparameter. The solid black line is the posterior distribution for the optimal model, the dashed gray line is the posterior distribution for an alternative model with the priors increased by 20%, the dotted gray line is the posterior distribution for an alternative model with the priors decreased by 20%.**
+
+```{r ch4-plot-pos, fig.cap='(ref:ch4-plot-pos)', fig.align='center', fig.dim = c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
+
+# Model intercept (Beta1)
+PostBeta1.M1.inform  <- as.data.frame(M1.inform$marginals.fixed$`(Intercept)`)
+PostBeta1.M1.plus20  <- as.data.frame(M1.plus20$marginals.fixed$`(Intercept)`)
+PostBeta1.M1.minus20 <- as.data.frame(M1.minus20$marginals.fixed$`(Intercept)`)
+
+beta1.sens <- ggplot() +
+geom_line(data = PostBeta1.M1.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid")+
+geom_line(data = PostBeta1.M1.plus20, 
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44") +
+geom_line(data = PostBeta1.M1.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44") +
+xlab("Intercept") +
+ylab("Density") +
+xlim(20,100) +
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank()) +
+theme(panel.border = element_rect(fill = NA, 
+                                  colour = "black", size = 1)) +
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# Male sl (Beta2)
+PostBeta2.M1.inform  <- as.data.frame(M1.inform$marginals.fixed$`sl`)
+PostBeta2.M1.plus20  <- as.data.frame(M1.plus20$marginals.fixed$`sl`)
+PostBeta2.M1.minus20 <- as.data.frame(M1.minus20$marginals.fixed$`sl`)
+
+beta2.sens <- ggplot() +
+geom_line(data = PostBeta2.M1.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid")+
+geom_line(data = PostBeta2.M1.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44")+
+geom_line(data = PostBeta2.M1.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44")+
+xlab("Slope for male SL")+
+ylab("Density")+
+xlim(1,2.5)+
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank())+
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1))+
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# Supplementary feeding (Beta3)
+PostBeta3.M1.inform  <- as.data.frame(M1.inform$marginals.fixed$`fSupp`)
+PostBeta3.M1.plus20  <- as.data.frame(M1.plus20$marginals.fixed$`fSupp`)
+PostBeta3.M1.minus20 <- as.data.frame(M1.minus20$marginals.fixed$`fSupp`)
+
+beta3.sens <- ggplot() +
+geom_line(data = PostBeta3.M1.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid")+
+geom_line(data = PostBeta3.M1.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44")+
+geom_line(data = PostBeta3.M1.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44")+
+xlab("Slope for suppl. feeding")+
+ylab("Density")+
+xlim(15,45)+
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank())+
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1))+
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# And plot the posterior distributions of sigma
+PostBeta3.M1.inform  <- as.data.frame(M1.inform$marginals.fixed$`fSupp`)
+PostBeta3.M1.plus20  <- as.data.frame(M1.plus20$marginals.fixed$`fSupp`)
+PostBeta3.M1.minus20 <- as.data.frame(M1.minus20$marginals.fixed$`fSupp`)
+
+Tau.M1.inform  <- M1.inform$marginals.hyperpar$`Precision for the Gaussian observations`
+Tau.M1.plus20  <- M1.plus20$marginals.hyperpar$`Precision for the Gaussian observations`
+Tau.M1.minus20 <- M1.minus20$marginals.hyperpar$`Precision for the Gaussian observations`
+
+Sigma.M1.inform  <- as.data.frame(inla.tmarginal(function(x) sqrt(1/x), Tau.M1.inform))
+Sigma.M1.plus20  <- as.data.frame(inla.tmarginal(function(x) sqrt(1/x), Tau.M1.plus20))
+Sigma.M1.minus20 <- as.data.frame(inla.tmarginal(function(x) sqrt(1/x), Tau.M1.minus20))
+
+sigma.sens <- ggplot() +
+geom_line(data = Sigma.M1.inform,
+                   aes(y = y, x = x), lwd = 0.8, linetype = "solid")+
+geom_line(data = Sigma.M1.plus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dashed", colour = "gray44")+
+geom_line(data = Sigma.M1.minus20,
+                   aes(y = y, x = x), lwd = 0.8, 
+                   linetype = "dotted", colour = "gray44")+
+ylab("Density")+
+xlab(expression(paste(sigma)))+
+theme(text = element_text(size=13)) +
+theme(panel.background = element_blank())+
+theme(panel.border = element_rect(fill = NA, 
+                                           colour = "black", size = 1))+
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))
+
+
+# Combine plots
+ggarrange(beta1.sens, beta2.sens, 
+                    beta3.sens, sigma.sens,
+                    labels = c("A", "B", 
+                               "C", "D"),
+                    ncol = 2, nrow = 2)
+
+```
+
+Plots of the posterior distributions for the fixed effects and hyperparameter (Fig. \@ref(fig:ch4-plot-pos)) further illustrate that the posterior distributions of model parameters are robust to changes in the priors.
+
+#### Conclusions from model checks
+
+Manual model selection based on the DIC allowed us to slightly refine the model by dropping the interaction between male standard length and the provision of supplementary food. The model with informative priors showed a comparable goodness-of-fit to that of the model with default priors. A plot of posterior predictive p-values suggested some overdispersion of the model, though leave-one-out cross validation indicated that the predictive distributions matched the data well. Residuals plots failed to highlight anything problematic with the model fit. Prior sensitivity analysis demonstrated the model to be robust to changes in prior distributions of fixed effects. Overall, then, the Bayesian GLM with informative priors appears to provide a good representation of the data.
+
+### Interpret and present model output	
+
+We specify the Bayesian GLM using mathematical notation in exactly the same way as we would for a frequentist model:
+
+$Response_{i}$ ~ $Gaussian(\mu_{i}$, $\sigma^{2})$
+
+_E_($Response_i$) = $\mu_i$   and   var($Response_{i}$) = $\sigma^{2}$
+
+$\mu_{i}$ = $\beta_1$ + $\beta_2$ x $Length_{i}$ + $\beta_3$ x $Supplement_{i}$ 
+
+Where $Response_{i}$ is the aggressive response distance (cm) of male European bitterling _i_ assuming a normal distribution with mean $\mu_{i}$ and variance $\sigma^{2}$. $Length_{i}$ is a continuous covariate representing the standard length of male bitterling _i_ (mm) and $Supplement_{i}$ is a categorical variable representing the provision of supplementary food to male _i_, with two levels; supplement provided or no supplement. The numerical output for the fixed effects of the final model is:
+
+```{r ch4-betas-out, comment="", echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+Final <- inla(resp_dist ~ sl + fSupp,  data = bitt,
+              control.predictor = list(link = 1,
+                                    compute = TRUE),
+                 control.compute = list(dic = TRUE, 
+                                        cpo = TRUE),
+                control.family = list(hyper =
+                     list(prec = list(prior = "gaussian",
+                                      param = c(0,1)))),
+                  control.fixed = list(mean.intercept = 20,
+                                       prec.intercept = 40^(-2),
+                                       mean = list(sl = 1.3, 
+                                               fSupp1 = 35,
+                                              default = 0), 
+                                       prec = list(sl = 0.7^(-2), 
+                                               fSupp1 = 15^(-2),
+                                              default = 1000)))
+
+# Posterior mean values and 95% CI for fixed effects
+BetasFinal <- Final$summary.fixed[,c("mean", "sd", 
+                                     "0.025quant", 
+                                     "0.975quant")] 
+round(BetasFinal, digits = 2)
+```
+
+And for sigma:
+
+```{r ch4-sigma-out, comment="", echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+SigmaFinal <- bri.hyperpar.summary(Final)[,c("mean", 
+                                             "q0.025", 
+                                             "q0.975")]
+
+Sigma_df <- data.frame(as.list(SigmaFinal))
+
+Sigma_df %>% 
+  mutate(term = "sigma")
+```
+
+These results can be more formally presented in the following way:
+
+Table 4.3: **Posterior mean estimates for aggressive response distances (cm) of male European bitterling (_Rhodeus amarus_) as a function of male standard length (mm) and a supplementary feeding treatment, modelled using a Gaussian GLM fitted using Bayesian inference with INLA. CrI are the Bayesian 95% credible intervals.**
+
+|Model parameter      |Posterior mean|Lower 95% CrI|Upper 95% CrI|
+|:-------------------|:-------------:|:-----------:|:-----------:|
+|Intercept            |58.56         |34.92        |82.09        |
+|Standard length      |1.77          |1.33         |2.21         |
+|Supplementary feeding|29.25         |21.88        |38.07        |
+|$\sigma$             |14.75         |12.32        |17.75        |
+
+These results show a statistically important positive effect of male bitterling standard length on response distance, with larger males initiating attacks on a rival at greater distances than smaller males. The effect of supplementary feeding for 6-days prior to testing was similarly to increase the aggressive response distance to a rival.
+
+### Visualise the results
+
+The final of the 9 steps to fitting a Bayesian GLM is to visualise the model (Section \@ref(glm-steps)). A figure helps with understanding model outcomes and is a valuable summary of the model findings for a paper, thesis or report. The full coding for this plot is available in the R script associated with this chapter.
+
+We start by defining a dataframe (‘`MyData`’) that contains `sl` and `fSupp` using `dplyr` functions: 
+
+`MyData <- ddply(bitt, .(fSupp), summarize, sl = seq(from = min(sl), to = max(sl), length = 50))`
+
+This creates 100 artificial covariate values. There is no `predict` function in INLA, but we can obtain fitted values manually with a design matrix for the values in `MyData` and then multiplying this with the posterior mean values of the model.
+
+We also must add an extra variable for the response variable to `MyData` and assign it ‘NA’. We will then combine the `bitt` and `MyData` objects, and apply INLA to this combined data set. INLA will predict the response variable where an NA occurs.
+
+`MyData$resp_dist <- NA`
+
+`bitt.Pred <- bitt[, colnames(MyData)]`
+
+`bitt.Comb <- rbind(bitt.Pred, MyData)`
+
+We next re-run the model in `INLA` using the combined data set (`bitt.Comb`), ensuring that `compute = TRUE` is selected in the `control.predictor` argument:
+
+`Final.Pred <- inla(resp_dist ~ sl + fSupp,  data = bitt.Comb, control.predictor = list(compute = TRUE), control.family = list(hyper = list(prec = list(prior = "gaussian",param = c(0,1)))), control.fixed = list(mean.intercept = 20, prec.intercept = 40^(-2), mean = list(sl = 1.3, fSupp1 = 35, default = 0), prec = list(sl = 0.7^(-2), fSupp1 = 15^(-2), default = 1000)))`
+                                               
+Generate predicted values and relevant components in `MyData`
+
+`Pred <- Final.Pred$summary.fitted.values[((nrow(bitt))+1): (nrow(bitt) + nrow(MyData)),]`
+                                           
+`MyData$mu    <- Pred[,"mean"]`
+
+`MyData$selow <- Pred[,"0.025quant"]`
+
+`MyData$seup  <- Pred[,"0.975quant"]`    
+
+Create figure labels:
+
+`label_supp <- c("0" = "No food supplement", "1" = "With food supplement")`
+
+And plot with ggplot2 (see the R script associated with this chapter).
+
+(ref:ch4-final-plot) **Posterior mean aggressive response distance (cm) of male European bitterling (_Rhodeus amarus_) as a function of male standard length (mm) and supplementary feeding, modelled using a Gaussian GLM fitted using Bayesian inference with INLA. Shaded areas are Bayesian 95% credible intervals. Black points are observed data for different males.**
+
+```{r ch4-final-plot, fig.cap='(ref:ch4-final-plot)', fig.align='center', fig.dim=c(6, 4), cache=TRUE,  message=FALSE, echo=FALSE, warning=FALSE}
+
+MyData <- ddply(bitt,
+                .(fSupp), summarize,
+                          sl = seq(
+                        from = min(sl),
+                          to = max(sl),
+                         length = 50))
+
+MyData$resp_dist <- NA
+
+bitt.Pred <- bitt[, colnames(MyData)]
+
+bitt.Comb <- rbind(bitt.Pred, MyData)
+
+Final.Pred <- inla(resp_dist ~ sl + fSupp,  data = bitt.Comb,
+              control.predictor = list(compute = TRUE),
+              control.family = list(hyper =
+                                   list(prec = list(prior="gaussian",
+                                                    param =c(0,1)))),
+              control.fixed = list(mean.intercept = 20,
+                                   prec.intercept = 40^(-2),
+                                   mean = list(sl = 1.3, 
+                                               fSupp1 = 35,
+                                               default = 0), 
+                                   prec = list(sl = 0.7^(-2), 
+                                               fSupp1 = 15^(-2),
+                                               default = 1000)))
+
+
+Pred <- Final.Pred$summary.fitted.values[((nrow(bitt)) + 1):
+                                          (nrow(bitt) + 
+                                           nrow(MyData)),]
+
+MyData$mu    <- Pred[,"mean"]
+MyData$selow <- Pred[,"0.025quant"]
+MyData$seup  <- Pred[,"0.975quant"]
+
+
+label_supp <- c("0" = "No food supplement", 
+                "1" = "With food supplement")
+
+ggplot() +
+geom_jitter(data = bitt, 
+                     aes(y = resp_dist, x = sl),
+                     shape = 19, size = 2.2,
+                     height = 0.25, width = 0.25, alpha = 0.6) +
+xlab("Male standard length (mm)") +
+ylab("Posterior mean response distance (cm)") +
+ylim(100,225)+
+theme(text = element_text(size = 13)) +
+theme(panel.background = element_blank())+
+theme(panel.border = element_rect(fill = NA, colour = "black", size = 1))+
+theme(strip.background = element_rect
+               (fill = "white", color = "white", size = 1))+
+geom_line(data = MyData, aes(x = sl, y = mu), size = 1)+
+geom_ribbon(data = MyData,
+                     aes(x = sl, ymax = seup, 
+                         ymin = selow), alpha = 0.5)+
+facet_grid(. ~ fSupp, scales = "fixed", space = "fixed", 
+                    labeller=labeller (fSupp = label_supp))+
+  theme(strip.text = element_text(size = 12, face="italic")) +
+theme(legend.position = "none")
+
+```
+
+The results of this statistical analysis can be summarised as follows:
+
+_A  Gaussian GLM was fitted to data using Bayesian inference with INLA to model the aggressive response distance (in cm) of a group of 48 territorial male European male bitterling_ (Rhodeus amarus) _to a model rival. There was a statistically important positive effect of male standard length (in mm) and supplementary feeding on response distance (Fig. \@ref(fig:ch4-final-plot)). The mean slope of the relationship between response distance (cm) and standard length (mm)  was 1.77 with 95% certainty that it lay between 1.33 and 2.21 (Table 4.3). The effect of supplementary feeding for six days prior to testing was to increase male response distance by 30 cm, with 95% certainty that it lay between 22 and 38 cm (Table 4.3). The model was fitted using informative priors on the fixed effects, obtained from a separate pilot study, and weakly informative effects on the hyperparameter._
+
+## Conclusions
+
+Bayesian inference offers an alternative approach to data analysis and has a number of advantages. One is that prior information can be incorporated into an analysis. Using prior information in a model is intuitively appealing and better reflects the scientific method of building on previous knowledge. A second advantage is in avoiding hypothesis testing and P-values, which do not allow us to draw direct conclusions about model parameters – only about hypothetical datasets (that we will never collect). Finally, there is a large range of advanced statistical methods that can only be performed in a Bayesian setting. 
+
+While a Bayesian model adds a layer of complexity to model fitting, since a careful consideration of the priors to be used is needed, it also adds an extra dimension to the sophistication of the analysis since, instead of simply presenting a model that describes the data, we now have a mechanism for incorporating previous knowledge or expert opinion through the prior distributions we put on model parameters.
+
+Finally, the GLM fitted here using `INLA` demonstrates the user-friendliness of this package, as well as its flexibility, repeatability and computational speed in comparison with MCMC.
