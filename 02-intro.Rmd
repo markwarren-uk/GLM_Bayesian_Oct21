@@ -2,7 +2,7 @@
 
 Bayesian inference is increasingly recognised as an essential tool for modelling ecological data. The Bayesian approach contrasts with more widely used _frequentist_ statistics. Bayesian inference actually pre-dates frequentist statistics by about 200 years, and has important advantages, particularly in the context of ecological modelling, since it lends itself to small data sets and decision making.
 
-Bayesian inference is attributed to the Reverend Thomas Bayes, an 18th Century English clergyman, philosopher and statistician. His ideas were subsequently expanded by the French polymath Pierre-Simon Laplace. Frequentist statistics were developed much later, largely in the 20th Century, by several figures including the brilliant British geneticist and statistician Sir Ronald Fisher and Polish mathematician Jerzy Spława-Neyman.
+Bayesian inference is attributed to the Reverend Thomas Bayes, an 18th Century English clergyman, philosopher and statistician. His ideas were subsequently expanded by the French polymath Pierre-Simon Laplace. Frequentist statistics were developed much later, largely in the 20th Century, by several figures, including the brilliant British geneticist and statistician Sir Ronald Fisher and Polish mathematician Jerzy Spława-Neyman.
 
 
 ## The differences between Bayesian and frequentist approaches {#freqbayes}
@@ -20,7 +20,7 @@ _P(D|H)_
 
 The way this approach is implemented is to test data against a null hypothesis by asking the question: What is the probability that we would obtain our set of data, if the null hypothesis was true?
 
-If the probability (or P-value) that the data support the null hypothesis is small, the null hypothesis is rejected. The critical cut-off for a ‘small’ P-value is typically taken to be 0.05, though this threshold is entirely arbitrary (and set too high, see @Benjamin_2017).
+If the probability (or P-value) that the data support the null hypothesis is small, the null hypothesis is rejected. The critical cut-off for a ‘small’ P-value is typically taken to be 0.05, though this threshold is entirely arbitrary (and set too high, see @Benjamin_2017.
 
 Note that if the null hypothesis is rejected, it is incorrect to conclude that the alternative hypothesis is correct. It is also erroneous to conclude that in the case of a large P-value (i.e. one that  exceeds 0.05) that the data support the null hypothesis.
 
@@ -37,9 +37,9 @@ In contrast to the frequentist approach, Bayesian inference provides a measure o
 _P(H|D)_
 :::
 
-As a consequence, Bayesian inference permits fundamentally different conclusions to be drawn with respect to probability. In Bayesian inference, model parameters are modelled as random variables with knowable quantities and probability is a direct measure of 'degree of belief'. Because probability is a measure of uncertainty, it is possible to make clear probability statements about unknown quantities, given the data and including by considering existing information. 
+As a consequence, Bayesian inference permits fundamentally different conclusions to be drawn with respect to probability. In Bayesian inference, model parameters are modelled as random variables with knowable quantities and probability is a direct measure of 'degree of belief'. Because probability is a measure of uncertainty, it is possible to make clear probability statements about unknown quantities, given the data as well as existing information. 
 
-So, while frequentists work with point estimations of parameters, based on means and variance, Bayesians generate posterior distributions of parameters given both the data and some prior information (or simply priors). The end result is that a Bayesian approach provides a fuller picture of uncertainty and permits probability statements about model parameters to be made with greater certainty.
+So, while frequentists work with point estimations of parameters, based on means and variance, Bayesians generate posterior distributions of parameters given both the data and some _prior information_ (or simply _priors_). The end result is that a Bayesian approach provides a fuller picture of uncertainty and permits probability statements about model parameters to be made with greater certainty.
 
 The _priors_ used in a Bayesian analysis may be vague (‘non-informative’), slightly explanatory (‘weakly informative’) or quite specific (‘informative’), but all must be specified in a model fitted using Bayesian inference. The prior distribution is an important feature of Bayesian inference and permits the inclusion of existing information into an analysis, something that is difficult to perform in a frequentist framework. 
 
@@ -63,11 +63,11 @@ P(H|D) = \frac{P(D|H) \times P(H)}{P(D)}
 
 The probability of the hypothesis given the data; i.e. _P(H|D)_, is referred to as the _posterior distribution_. The quantity _P(D|H)_ is the _likelihood_ and reflects the data. The quantity _P(H)_ is the _prior probability distribution_, often just called the _prior_. The prior reflects information about the hypothesis that is independent of the data. Finally _P(D)_ is the _marginal probability density_, which serves as a normalising constant across all possible hypotheses.
 
-An essential feature of the Bayesian approach is that probability is explicitly subjective and represents a measure of _degree of belief_. The Bayesian posterior distribution is an expression of that degree of belief and is the product of the likelihood and prior, which means that both data and existing information contribute to a probability estimate.
+An essential feature of the Bayesian approach is that probability is explicitly subjective and represents a measure of _degree of belief_. The Bayesian posterior distribution is an expression of that degree of belief and is the product of the likelihood and prior, which means that both data and existing information contribute to a posterior probability estimate.
 
 While a frequentist tests a null hypothesis and assumes no relevant information, irrespective of the number of times the same null hypothesis may have been examined previously, a Bayesian takes advantage of existing information to formulate the probability of whether an hypothesis is supported.
 
-Bayes’ theorem also lends itself to iterative exploration of probability. From a starting point with little prior information, data can be collected that can subsequently be used to generate more informed priors. The Bayesian approach is consequently highly responsive to new findings and can be used in the context of adaptive resource management, for example in wildlife management and clinical trials.
+Bayes’ theorem lends itself to iterative exploration of probability. From a starting point with little prior information, data can be collected that can subsequently be used to generate more informed priors. The Bayesian approach is consequently highly responsive to new findings and can be used in the context of adaptive resource management, for example in wildlife management and clinical trials.
 
 ### A frequentist or Bayesian framework? {#which}
 
@@ -81,7 +81,7 @@ Whether fitted in a frequentist or Bayesian context, General and Generalized Lin
 
 ### Steps in fitting a Bayesian GLM {#fit-steps}
 
-We recommend the following 9 steps to fitting a Bayesian GLM, modified from [@Kruschke_2015] and [@Zuur_2016].
+We recommend the following 9 steps to fitting a Bayesian GLM, modified from @Kruschke_2015 and @Zuur_2016.
 
 1.  _State the question_
 Formulating a coherent research question before data collection is a critical exercise in ecology since it informs experimental design or sampling and identifies which data variables are to be predicted and which are predictors. If you do not know your research question, do not start data collection.
@@ -162,9 +162,9 @@ Table 2.1: **Examples of conjugate priors**
 |Gaussian  |Gaussian |Gaussian |
 |Poisson   |Gamma    |Gamma    |
 |Negative binomial|Beta  |Beta |
-|Gaussian  |Beta     |Beta     |
-|Gaussian  |Beta     |Beta     |
-|Gaussian  |Gamma    |Gamma    |
+|Bernoulli  |Beta     |Beta     |
+|Binomial  |Beta     |Beta     |
+|Exponential  |Gamma    |Gamma    |
 
 ## The posterior distribution {#post-dist}
 
@@ -196,7 +196,7 @@ While MCMC offers a powerful method for posterior inference, in practice model c
 
 An alternative to MCMC for obtaining a posterior distribution is offered by an approach that derives approximate solutions to numerical integration. Laplace approximation uses a normal distribution to approximate the posterior distribution and is able to generate accurate approximations. Notably, numerical approximation is substantially faster than MCMC, making exploration of Bayesian models more practical.
 
-Integrated nested Laplace approximation (INLA) is a particularly user-friendly computational method [@Rue_2009]. Instead of estimating a multivariate joint posterior distribution, which is difficult to obtain, INLA focuses on individual posterior marginal distributions of model parameters. The INLA R package offers a full suite of Bayesian tools. We use R-INLA throughout this book for fitting Bayesian GLMs and recommend [@Wang_2018] and [@G_mez_Rubio_2020] for fuller discussion of the theory of INLA.
+Integrated nested Laplace approximation (INLA) is a particularly user-friendly computational method [@Rue_2009]. Instead of estimating a multivariate joint posterior distribution, which is difficult to obtain, INLA focuses on individual posterior marginal distributions of model parameters. The INLA R package offers a full suite of Bayesian tools. We use R-INLA throughout this book for fitting Bayesian GLMs and recommend @Wang_2018 and @G_mez_Rubio_2020 for fuller discussion of the theory of INLA.
 
 ## The advantages of Bayesian inference {#bayes-pros}
 
