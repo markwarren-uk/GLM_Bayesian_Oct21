@@ -5,7 +5,7 @@ date: November 2021
 output:
   pdf_document: 
     toc: yes
-    toc_depth: 3
+    toc_depth: 4
     df_print: kable
     number_sections: yes
     fig_width: 5
@@ -44,7 +44,7 @@ library(rcrossref)
 
 
 # Preface {-}
-Our goal is to produce a set of accessible, inexpensive statistics guides for undergraduate and post-graduate students that are tailored to specific fields and that use R. These books present minimal statistical theory and are intended to allow students to understand the process of data exploration and model fitting and validation using datasets comparable to their own and, thereby, encourage the development of statistical skills. 
+Our goal is to produce a set of accessible, inexpensive statistics guides for undergraduate and post-graduate students that are tailored to specific fields and that use R. These books present minimal statistical theory and are intended to allow researchers to understand the process of data exploration, model fitting and model validation using datasets comparable to their own and, thereby, encourage the development of statistical skills. 
 
 To obtain the R script and data associated with each book chapter, type the following into your browser and download the data and script files: 
 
@@ -116,7 +116,7 @@ Once both are installed always start any R session by opening RStudio (R will be
 
 The RStudio interface comprises four windows, which by default are organised as follows:
 
-1. Bottom Left: _Console/Terminal/Jobs_ window. For now we will just focus on the _Console_ tab. Here you can directly enter commands after the “>” prompt. This is where you will see R execute your commands and where results will appear. However you cannot save anything written here. Instead, it is more efficient to write your commands on the _Source_ window (see below) and leave this window for results.
+1. Bottom Left: _Console/Terminal/Jobs_ window. For now we will just focus on the _Console_ tab. Here you can directly enter commands after the “>” prompt. This is where you will see R execute your commands and where results will appear. However you cannot save anything written here. Instead, it is more efficient to write your commands on the _Source_ window (see below) and leave the _Console_ window for results.
 
 2. Top Left: _Source_ window. Here you can write commands (organised as script) that can be edited and saved. If no script has been selected the window will appear as “Untitled”. It is in the Source window that you will do all your work - writing and editing script, and pasting in script from other sources. The contents of the entire window can be selected (CTRL+A) and then executed using the “Run” command at the top right of the window. Alternatively, you can run script one line at a time by placing the cursor anywhere on a line of interest and clicking RUN. You can also run a line of script from the keyboard using CTRL+ENTER. When a line of script is run in the Source window you will see that it is sent to the _Console_ window to be executed.
 
@@ -157,9 +157,9 @@ R is referred to as an object-based programming language. Statistical analyses a
 `a <- 1`
 `r a <- 1`
 
-We create an object ‘a’ with the value of 1. The symbol ‘<-‘ is termed the assignment operator, and it assigns whatever is on its right-hand side to whatever is on its left-hand side. It is a type of function (see Section \@ref(functions)). The assignment operator keyboard shortcut is ALT and '-' (Windows) or Option and '-' (Mac). Remember this shortcut and use it to save typing and time! 
+We create an object `a` with the value of 1. The symbol ‘<-‘ is termed the assignment operator, and it assigns whatever is on its right-hand side to whatever is on its left-hand side. It is a type of function (see Section \@ref(functions)). The assignment operator keyboard shortcut is ALT and '-' (Windows) or Option and '-' (Mac). Remember this shortcut and use it to save typing and time! 
 
-We can examine the value of object a by typing its name in the Editor/Script window and clicking RUN (or CTRL+ENTER on the keyboard):
+We can examine the value of object `a` by typing its name in the Editor/Script window and clicking RUN (or CTRL+ENTER on the keyboard):
 
 `a`
 
@@ -310,7 +310,7 @@ You can work with more than one RStudio project at a time by simply opening each
 
 _File >> Open Project in New Session_
 
-You can then navigate to the working directory (or folder) where the project is saved. Then select the project file (<NAME>.Rproj) and select open in the dialogue box. A new RStudio and R session will be available in a new window. This is helpful when you are starting an analysis that is similar to one you did a while back, having the older project open means you can copy/paste similar code into new project scripts.  
+You can then navigate to the working directory (or folder) where the project is saved. Then select the project file (<NAME>.Rproj) and select 'open' in the dialogue box. A new RStudio and R session will be available in a new window. This is helpful when you are starting an analysis that is similar to one you did a while back, having the older project open means you can copy/paste similar code into new project scripts.  
 
 
 ### Importing data {#import}
@@ -339,11 +339,11 @@ Every function has the form `function.name()` with arguments given inside the br
 
 Many functions in R come in _packages_ although you can create your own as we will see in later chapters. Packages are folders containing all the script that is needed to run particular functions. When you first install R it comes with a set of default packages (base R) and whenever you open R or RStudio, some of these are loaded to ensure you have basic functionality. However, as you develop your statistical and R-coding skills, you will need to load specific packages to do particular jobs.
 
-As an example, we can use the function `describe()` from the package _psych_ to report basic summary statistics for the variable `depth` in the `cyan` dataframe. The package psych is not part of base R, which means that to use the function `describe()` we must first install the package _psych_:
+As an example, we can use the function `describe()` from the package _psych_ to report basic summary statistics for the variable `depth` in the `cyan` dataframe. The `psych` package is not part of base R, which means that to use the function `describe()` we must first install the package `psych`:
 
 `install.packages("psych")`
 
-R will go online, download the package from the package repository and install it to the R library on your computer. Note that to install packages the package name is wrapped in quotes (“package”)
+R will go online, download the `psych` package from the package repository and install it to the R library on your computer. Note that to install packages the package name is wrapped in quotes (“package”)
 
 When a package is installed it is necessary to then _load_ it from the library so that R can access its functions, which is done using the `library()` command:
 
@@ -355,7 +355,7 @@ library(psych)
 
 Note that loading a package does not require the quotes around the name that install.packages() needed. You only need to _install_ a package once. However, after you close R you will have to _load_ any packages that you need again. It is good practice to load all the packages you will need for your data processing, visualisation, and analysis at the beginning of your script. You will see this in the script we provide for analysis in this book.
 
-Now that the package psych is installed and loaded, we can use the function `describe()` to summarise the variable `depth` in the `cyan` dataframe. The variable `depth` is an estimate of the fraction of each nest box that was filled by a blue tit nest. Note that the `$` symbol is used to select the column `depth` in the `cyan` dataframe.
+Now that the package `psych` is installed and loaded, we can use the function `describe()` to summarise the variable `depth` in the `cyan` dataframe. The variable `depth` is an estimate of the fraction of each nest box that was filled by a blue tit nest. Note that the `$` symbol is used to select the column `depth` in the `cyan` dataframe.
 
 `describe(cyan$depth, skew = FALSE)`
 
