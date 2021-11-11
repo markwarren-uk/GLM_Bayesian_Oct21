@@ -1,6 +1,6 @@
 # Bayesian GLM {#gen-model}
 
-A General Linear Model predicts a dependent (or response) variable, which is continuous and approximately normally distributed, from one or more independent (or predictor) variables. A normal statistical distribution, also referred to as a Gaussian distribution (after the brilliant German mathematician Carl Friedrich Gauss), assumes the data are drawn from a distribution that is symmetric and can be summarised by the arithmetic mean and standard deviation. Independent variables may also be continuous, categorical, or a combination of continuous and categorical. Categorical variables are commonly referred to as _factors_, which have a series of _levels._ For example, a factor might be sex, which has two levels (male and female).
+A General Linear Model predicts a dependent (or response) variable, which is continuous and approximately normally distributed, from one or more independent (or predictor) variables. A normal statistical distribution, also referred to as a Gaussian distribution (after the brilliant German mathematician Carl Friedrich Gauss), assumes the data are drawn from a distribution that is symmetric and can be summarised by the arithmetic mean and standard deviation. Independent variables may also be continuous, categorical, or a combination of continuous and categorical. Categorical variables are commonly referred to as _factors_, which have a series of _levels._ For example, a factor might be sex, which has just two levels (male and female).
 
 A GLM comprises three components: 1. the linear predictor, which is a linear function of the predictor variable; 2. the conditional probability distribution of the response variable, which is the distribution of the response variable across the regression line for the given set of predictor variables; 3. the link function, which connects the linear predictor with the mean of the conditional probability distribution. 
 
@@ -270,7 +270,7 @@ For computational efficiency, Bayesian analysis uses the precision ($\tau$ or ta
 
 $\tau$ = $\sigma^{-2}$
 
-Precision plays an important role in manipulating distributions. By default a diffuse gamma prior is assumed for the precision.
+By default a diffuse gamma prior is assumed for the precision in INLA.
 
 
 ### Specification of priors
@@ -323,9 +323,9 @@ broom::tidy(p1)
 
 1. The response distance of males when standard length is zero is approximately 20 cm (sd ~ 40). This is the `intercept`.
 2. A 1 mm increase in male standard length results in an increased response distance of approximately 1.3 cm (sd ~ 0.7). This is the slope of `length`.
-3. Supplementary feeding adjusted the slope (response distance) by approximately 35 cm (sd ~ 15)(`fSupp1`). 
+3. Supplementary feeding adjusted the slope (response distance) by approximately 35 cm (sd ~ 15) (`supplementyes`). 
 
-Since we did not include an interaction in the pilot model it will be incorporated as a weakly-informative prior in the Bayesian model.
+Since we did not include an interaction in the pilot model it will be incorporated as a weakly-informative prior in the full Bayesian model.
 
 #### Priors on the fixed effects
 
@@ -343,7 +343,7 @@ Thus, in the case of $\beta intercept$, we assume normality with a mean of 20 cm
 
 #### Priors on the hyperparameter
 
-The prior distribution on the hyperparameter should also be specified. The default is a diffuse gamma distribution, but other distributions can be used, for a full list see:
+The prior distribution on the hyperparameter should also be specified. The default is a diffuse gamma distribution, but other distributions can be used, for a full list of available distributions in INLA see:
 
 `names(inla.models()$prior)`
 
@@ -369,7 +369,7 @@ The default priors used for the model can be obtained with:
 
 `inla.priors.used(M0)`
 
-This output shows that for the fixed effects:
+This output shows that for the fixed effects the priors for the default model are:
 
 $\beta intercept$ ~ _N_(0, 0) ($\tau$ = 0)
 
@@ -419,7 +419,7 @@ $\sigma$ ~ _N_(0, 1) ($\tau$ = 1)
 
 ##### Fixed effects
 
-Output from model M0 can be obtained with:
+Output from model `M0` can be obtained with:
 
 `summary(M0)`
 
@@ -438,7 +438,7 @@ M0Betas <- M0$summary.fixed[,c("mean", "sd",
 round(M0Betas, digits = 2)
 ```
 
-This reports the _posterior mean_ and _standard deviation_ for the model intercept (`intercept`), covariates (`sl`, `fSupp1`) and interaction (`sl:fSupp1`). Note that there are no P-values, which are used in frequentist analyses but are meaningless in a Bayesian context. Instead we have the 95% _credible intervals_; these are the 0.025 and 0.975 quantiles in the output above.
+This output reports the _posterior mean_ and _standard deviation_ for the model intercept (`intercept`), covariates (`sl`, `fSupp1`) and interaction (`sl:fSupp1`). Note that there are no P-values, which are used in frequentist analyses but are meaningless in a Bayesian context. Instead we have the 95% _credible intervals_; these are the 0.025 and 0.975 quantiles in the output above.
 
 For the variable `sl` we have a posterior mean of `r round(M0Betas$'mean'[2], 2)` and lower 95% credible interval of `r round(M0Betas$'0.025quant'[2], 2)` and upper 95% credible interval of `r round(M0Betas$'0.975quant'[2], 2)`. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for `sl` falls between these credible intervals.
 
@@ -448,7 +448,7 @@ Similarly, we can conclude that the `Intercept` of the relationship, with credib
 
 For supplementary feeding (`fSupp1`), and the interaction between standard length and supplementary feeding (`sl:fSupp1`), the credible intervals range from negative values for the lower credible interval to positive for the upper interval, indicating that these model parameters do not differ from zero.
 
-Instead of just summarising the posterior distribution of the fixed effects with a posterior mean and a 95% credible interval, we can plot the posterior distribution of each parameter, available in the object `M0$marginals.fixed`.
+Instead of just summarising the posterior distribution of the fixed effects with a posterior mean and a 95% credible interval, we can plot the posterior distribution of each parameter, available in the INLA object `M0$marginals.fixed`.
 The posterior distributions can be visualized using `ggplot2`. The coding for this plot is available in the R script associated with this chapter.
 
 (ref:ch4-M0-betas) **Posterior and prior distributions for fixed parameters of a Bayesian linear regression to predict the territorial response distance of male European bitterling in response to a rival. The model is fitted with default (non-informative) priors. Distributions for: A. model intercept; B. slope for male standard length; C. slope for supplementary feeding; D. interaction of male standard length and supplementary feeding. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero.**
@@ -577,11 +577,9 @@ Model `M0` contains a parameter, sigma ($\sigma$), that is used for the variance
 
 As with the fixed effects, we can put priors on the hyperparameter (or use the non-informative default) but a vital step in fitting a Bayesian model is to examine the posterior distribution of the hyperparameter(s).
 
-Recall that a complication is that INLA uses precision ($\tau$ or tau) rather than the variance of the hyperparameter, though this is simply the reciprocal of the variance.
+Recall that a slight complication is that INLA uses precision ($\tau$ or tau) rather than the variance of the hyperparameter, though this is simply the reciprocal of the variance.
 
 We can obtain a summary of the precision of the hyperparameter with:
-
-Obtain posterior distribution of precision (tau):
 
 `M0hyp <- M0$summary.hyper[,c("mean", "mode", "0.025quant", "0.975quant")]`
 
@@ -593,7 +591,7 @@ M0hyp <- M0$summary.hyper[,c("mean","mode","0.025quant","0.975quant")]
 |:-------------------------:|:-----:|:----:|:--------:|:--------:|
 |Precision for Gaussian obs |0.004  |0.0038|0.0025   |0.0057    |
 
-The posterior distribution of the precision of the hyperparameter can be visualized using `ggplot2`. See R script associated with this chapter. Because the posterior distribution is not symmetrical, we plot the posterior mode (rather than mean) as a dashed vertical line.
+The posterior distribution of the precision of the hyperparameter can be visualized using `ggplot2`. See the R script associated with this chapter. Because the posterior distribution is not symmetrical, we plot the posterior mode (rather than mean) as a dashed vertical line.
 
 (ref:ch4-M0-hyp-plot) **Posterior and prior distributions for the precision of the hyperparameter of a Bayesian linear regression to predict the territorial response distance of male European bitterling to a rival. The model is fitted with default (non-informative) priors. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mode, the vertical dotted line indicates zero.**
 
@@ -697,7 +695,7 @@ round(M1Betas, digits = 2)
 
 This reports the posterior mean, standard deviation and 95% credible intervals for the `intercept`, covariates (`sl`, `fSupp1`) and interaction (`sl:fSupp1`). Note that the posterior means differ quantitatively from the default model as do the 95% credible intervals, which encompass a narrower range in each case. 
 
-For the variable `sl` we now have a posterior mean of the slope of `r round(M1Betas$'mean'[2],2)` and lower 95% credible interval of `r round(M1Betas$'0.025quant'[2],2)` and upper 95% credible interval of `r round(M1Betas$'0.975quant'[2],2)`. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for the slope of sl falls between these credible intervals.
+For the variable `sl` we now have a posterior mean of the slope of `r round(M1Betas$'mean'[2],2)` and lower 95% credible interval of `r round(M1Betas$'0.025quant'[2],2)` and upper 95% credible interval of `r round(M1Betas$'0.975quant'[2],2)`. We can conclude from this result that we are 95% certain that the posterior mean of the regression parameter for the slope of sl falls between these credible intervals, centered around the posterior mean.
 
 We can similarly conclude that the `Intercept` of the relationship differs from zero, with a posterior mean of `r round(M1Betas$'mean'[1],2)` and credible intervals from `r round(M1Betas$'0.025quant'[1],2)` to `r round(M1Betas$'0.975quant'[1],2)`.
 
@@ -884,7 +882,7 @@ theme(strip.background = element_rect
 
 While informative priors were put on fixed effects in the model, a weakly informative prior was put on the hyperparameter; evident in the prior distribution in Fig. \@ref(fig:ch4-M1-hyp-plot). The 95% credible intervals of the posterior distribution of the hyperparameter do not include zero.
 
-Because we typically do not work with precision, it is helpful to obtain the posterior distribution of the standard deviation of the hyperparameter (sigma, $\sigma$) with:
+We can obtain the posterior distribution of the standard deviation of the hyperparameter (sigma, $\sigma$) with:
 
 `round(bri.hyperpar.summary(M1),2)`
 
@@ -927,8 +925,6 @@ theme(panel.border = element_rect(fill = NA,
 theme(strip.background = element_rect
                (fill = "white", color = "white", size = 1))
 ```
-
-The standard deviation of the standard deviation of the hyperparameter differs from zero (Fig. \@ref(fig:ch4-M0-brihyp-plot)).
 
 #### Comparison with frequentist Gaussian GLM
 
@@ -982,16 +978,19 @@ We can also compare the standard deviation of the residuals (sigmas) for these m
 For the Frequentist model:
 
 `round(summary(Freq)$sigma,2)`
+
 `r round(summary(Freq)$sigma,2)`
 
 For the Bayesian model with default priors:
 
 `round(bri.hyperpar.summary(M0)[,c("mean")],2)`
+
 `r round(bri.hyperpar.summary(M0)[,c("mean")],2)`
 
 For the Bayesian model with informative priors:
 
 `round(bri.hyperpar.summary(M1)[,c("mean")],2)`
+
 `r round(bri.hyperpar.summary(M1)[,c("mean")],2)`
 
 Estimates of sigma are almost identical for the frequentist and Bayesian model with default priors. The greater precision of the Bayesian model with informative priors is reflected by a smaller sigma. 
@@ -1004,7 +1003,7 @@ After model fitting and obtaining the posterior distributions, an important next
 
 When a model is fitted with several explanatory variables, including interaction terms, we have the opportunity to conduct _model selection_. Model selection involves finding an optimal set of covariates for a model. It is a hotly debated subject in statistics, with several alternative approaches. Here we present a simple model selection procedure for models `M0` and `M1`. A more sophisticated model selection procedure using an Information Theoretic (IT) approach is presented in Chapter 5.
 
-In a frequentist setting a common approach to model selection is to use classical backward or forward stepwise model selection based on the Akaike Information Criteria (AIC). AIC measures goodness of fit and model complexity, with the lower the AIC score, the better the fit of the model to the data, penalised by model complexity. In backward model selection, a model with all covariates is fitted and then sequential deletion of covariates is undertaken until removal of further covariates fails to improve the fit of the model. In forward selection this procedure is reversed.
+In a frequentist setting a common approach to model selection is to use classical backward or forward stepwise model selection based on the Akaike Information Criteria (AIC). AIC measures goodness-of-fit and model complexity, with the lower the AIC score, the better the fit of the model to the data, penalised by model complexity. In backward model selection, a model with all covariates is fitted and then sequential deletion of covariates is undertaken until removal of further covariates fails to improve the fit of the model. In forward selection this procedure is reversed.
 
 In a Bayesian framework the Deviance Information Criterion (DIC) can similarly be used to compare model goodness-of-fit while penalising model complexity. Like AIC, a smaller DIC score indicates a better fit of the model to the data given its complexity.
 
@@ -1073,7 +1072,7 @@ colnames(DIC) <- "DIC"
 round(DIC,1)
 ```
 
-The model without an interaction generates the lowest DIC score (`r round(min(DIC), 1)`). This score is only marginally lower than the score for the full model with the interaction, which is an indication that the interaction is not important in the model. A difference in DIC scores of between 5 and 10 would be considered substantial. 
+The model without an interaction generates the lowest DIC score (`r round(min(DIC), 1)`). This score is only marginally lower than the score for the full model with the interaction included, which is an indication that the interaction is not important in the model. A difference in DIC scores of between 5 and 10 would be considered substantial. 
 
 Following the same procedure with model M1 (see R script associated with this chapter) yields:
 
@@ -1171,7 +1170,7 @@ Given the similarity in goodness-of-fit of both these models, what should we do?
 
 #### Posterior predictive checks
 
-The purpose of posterior predictive checks is to assess if a model generates realistic predictions. It does this by drawing simulated estimates from the joint posterior predictive distribution and comparing them with observed data. Any departure of the simulated data from the observed data will reflect problems with the model. Ideally simulated data will match the observed. This matching is performed with a posterior predictive p-value. If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar. However, if a posterior predictive p-value is close to 1 it means the model prediction is too high, if close to zero, the model prediction is too low. A frequency plot of posterior predictive p-values should show a distribution centred around 0.5.
+The purpose of posterior predictive checks is to assess if a model generates realistic predictions. It does this by drawing simulated estimates from the joint posterior predictive distribution and comparing them with observed data. Any departure of the simulated data from the observed data will reflect problems with the model. Ideally, simulated data should match the observed. This matching is performed with a posterior predictive p-value. If the posterior predictive p-value is close to 0.5 it means simulated and observed data are similar. However, if a posterior predictive p-value is close to 1 it means the model prediction is too high, if close to zero, the model prediction is too low. A frequency plot of posterior predictive p-values should show a distribution centred around 0.5.
 
 In `INLA` the posterior predictive p-value can be obtained with the function `inla.pmarginal()`. See the R script associated with this chapter for estimating and plotting the posterior predictive p-values for the Bayesian model with informative priors without interaction.
 
@@ -1653,9 +1652,9 @@ We start by defining a dataframe (‘`MyData`’) that contains `sl` and `fSupp`
 
 `MyData <- ddply(bitt, .(fSupp), summarize, sl = seq(from = min(sl), to = max(sl), length = 50))`
 
-This creates 100 artificial covariate values. There is no `predict` function in INLA, but we can obtain fitted values manually with a design matrix for the values in `MyData` and then multiplying this with the posterior mean values of the model.
+This creates 100 artificial covariate values. There is no `predict` function in INLA, but we can obtain fitted values manually with a design matrix for the values in `MyData` and then multiply this with the posterior mean values of the model.
 
-We also must add an extra variable for the response variable to `MyData` and assign it ‘NA’. We will then combine the `bitt` and `MyData` objects, and apply INLA to this combined data set. INLA will predict the response variable where an NA occurs.
+We must also add an extra variable for the response variable to `MyData` and assign it ‘NA’. We will then combine the `bitt` and `MyData` objects, and apply INLA to this combined data set. INLA will predict the response variable where an NA occurs.
 
 `MyData$resp_dist <- NA`
 
@@ -1681,7 +1680,7 @@ Create figure labels:
 
 `label_supp <- c("0" = "No food supplement", "1" = "With food supplement")`
 
-And plot with ggplot2 (see the R script associated with this chapter).
+And plot with `ggplot2` (see the R script associated with this chapter).
 
 (ref:ch4-final-plot) **Posterior mean aggressive response distance (cm) of male European bitterling (_Rhodeus amarus_) as a function of male standard length (mm) and supplementary feeding, modelled using a Gaussian GLM fitted using Bayesian inference with INLA. Shaded areas are Bayesian 95% credible intervals. Black points are observed data for different males.**
 
