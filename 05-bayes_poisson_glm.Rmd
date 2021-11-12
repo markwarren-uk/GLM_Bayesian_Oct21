@@ -1,6 +1,6 @@
 # Bayesian Poisson GLM {#pois-glm}
 
-The Bayesian General Linear Model presented in Chapter 4 assumes that the response variable approximately follows a normal distribution at each level of the covariate values. Generalised linear models are a larger class of models that represent an extension of the general linear model that allows the specification of models with response variables that follow non-Gaussian distributions.
+The Bayesian General Linear Model presented in Chapter 4 assumes that the response variable approximately follows a normal distribution at each level of the covariate values. Generalised linear models are a larger class of models that represent an extension of the general linear model and allow the specification of models with response variables that follow non-Gaussian distributions.
 
 Generalised Linear Models offer the opportunity to model a much greater range of data and remove the need to transform our data to fit a normal distribution. Unfortunately the terminology around these models is confusing. The abbreviation GLM usually refers to General Linear Models; i.e. linear regression models for a continuous response variable with continuous and/or categorical covariates. Generalised Linear Models are sometimes abbreviated as GLIM and occasionally GLZM though, confusingly, it is more typical to abbreviate them just as GLM. 
 
@@ -52,7 +52,7 @@ Assess the size of the dataframe and the variables it comprises:
 str(ga, vec.len=2)
 ```
 
-The dataframe comprises `r nrow(ga)` observations of `r ncol(ga)` variables. Each row in the dataframe represents a separate North Uist freshwater lake or _loch_ (`loch`). There are four continuous ecological variables: `dist` is the horizontal distance from each loch to the nearest marine habitat (in km), `alt` is the altitude of the loch above sea level (in m), `area` is the surface area of the loch (in km^2^), and `pH` is loch water pH. There are also three categorical ecological variables, scored as either 'yes' or 'no': `comp` is the presence in a loch of nine-spined sticklebacks (_Pungitius pungitius_), which are competitors of three-spined sticklebacks, `inve` is the presence of invertebrate predators of three-spined sticklebacks (primarily dragonfly and beetle larvae), and `vert` is the presence of vertebrate predators of three-spined sticklebacks (brown trout, _Salmo trutta_). Two further variables are `sl`, which is the mean body length of three-spined sticklebacks from a sample of 30 fish from each loch, and `plate` is the median plate number of the same 30 fish.
+The dataframe comprises `r nrow(ga)` observations of `r ncol(ga)` variables. Each row in the dataframe represents a separate North Uist freshwater lake or _loch_ (`loch`). There are four continuous ecological variables: `dist` is the horizontal distance from each loch to the nearest marine habitat (in km), `alt` is the altitude of the loch above sea level (in m), `area` is the surface area of the loch (in km^2^), and `pH` is loch water pH. There are also three categorical ecological variables, scored as either 'yes' or 'no': `comp` is the presence in a loch of nine-spined sticklebacks (_Pungitius pungitius_), which are competitors of three-spined sticklebacks, `inve` is the presence of invertebrate predators of three-spined sticklebacks (primarily dragonfly and beetle larvae), and `vert` is the presence of vertebrate predators of three-spined sticklebacks (brown trout, _Salmo trutta_). Two further variables are `sl`, which is the mean body length of three-spined sticklebacks from a sample of 30 fish from each loch, and `plate` is the median lateral plate number of the same 30 fish. Lateral plate number is the response variable of interest.
 
 ## Steps in fitting a Bayesian GLM {#pois-glm-steps}
 
@@ -82,7 +82,7 @@ This study was conducted to understand variation in lateral plate number of thre
 
 This multiplicity of existing research presents us with the opportunity to compare among previous hypotheses and examine which is best supported by our data. This approach to hypothesis testing is termed an ‘information theory (IT) approach’ and is fundamentally Bayesian, since we take prior information and update it with new data to draw the most parsimonious conclusion.
 
-We start by formulating a set of biologically plausible alternative models comprising variables proposed as environmental agents of selection on lateral plate number in previous studies (Table 5.1).
+We start by formulating a set of biologically plausible alternative models comprising variables proposed as environmental agents of selection in previous studies on lateral plate number (Table 5.1).
 
 Table 5.1: **_A priori_ models for the evolution of lateral plates of three-spined sticklebacks (_Gasterosteus aculeatus_) in freshwater lochs on North Uist, Scotland.**
 
@@ -338,11 +338,11 @@ The plots shown in Fig. \@ref(fig:ch5-cat-vars) suggest variation in lateral pla
 
 #### Independence of response variable {#pois-indep}
 
-An assumption of a GLM is that each observation in a dataset is independent of all others. In the case of the present study each row of data represented a discrete freshwater loch supporting a different three-spined stickleback population. Ostensibly then, these data are independent. However, there is the potential for spatial dependency in these data. North Uist shows striking environmental spatial heterogeneity with the West coast of the island is characterised by a band of calcium-rich shell-sand grassland, termed the _machair_, while in the central and eastern regions the _machair_ gives way to blanket peat bogs with acidic lochs. A GLM does not permit spatial (or temporal) dependency to be adequately modelled and so, for the purposes of this analysis, while we will treat the data as independent, though this may not strictly be the case. 
+An assumption of a GLM is that each observation in a dataset is independent of all others. In the case of the present study each row of data represents a discrete freshwater loch supporting a different three-spined stickleback population. Ostensibly then, these data are independent. However, there is the potential for spatial dependency in these data. North Uist shows striking environmental spatial heterogeneity with the West coast of the island characterised by a band of calcium-rich shell-sand grassland, termed the _machair_, while in the central and eastern regions the _machair_ gives way to blanket peat bogs with acidic lochs. A GLM does not permit spatial (or temporal) dependency to be adequately modelled and so, for the purposes of this analysis, while we will treat the data as independent, though this may not strictly be the case. 
 
 ### Selection of a statistical model {#pois-select}
 
-The study was designed to compare alternative hypotheses for the evolution of lateral plate number in three-spined sticklebacks. The dependent variable comprises lateral plate counts that include zero, though negative values are not possible. The distribution of the response variable is positively skewed (Fig. \@ref(fig:ch5-freqpoly)). The data will treated as independent, though given the structure of the environment on North Uist, there may be spatial dependency in the data.
+The study was designed to compare alternative hypotheses for the evolution of lateral plate number in three-spined sticklebacks. The dependent variable comprises lateral plate counts that include zero, though negative values are not possible. The distribution of the response variable is positively skewed (Fig. \@ref(fig:ch5-freqpoly)). The data will be treated as independent, though given the structure of the environment on North Uist, there may be spatial dependency in the data.
 
 Given these conditions, a Poisson is an appropriate distribution as a starting point to model the data, in combination with a log link function. The Poisson is a non-normal distribution that is effective for modelling strictly positive integer data (such as counts). It has a single parameter (lambda, $\lambda$), which is both the mean and variance of the response variable. Sometimes you might see mu ($\mu$) used to represent the mean. The variance in the Poisson distribution is proportional to the mean so that larger mean values have larger variation. In the context of an INLA model, a Poisson model has no hyperparameter. 
 
@@ -486,7 +486,7 @@ DefDIC.weights %>% mutate(model = c("M01","M02","M03", "M04","M05","M06", "M07",
 
 We can summarise this output for presentation:
 
-Table 5.3: **Non-informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta is the difference in DIC scores, omega is DIC weighting.**
+Table 5.3: **Non-informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta _i_ is the difference in DIC scores, omega is DIC weighting.**
 
 |Model|DIC  |$\Delta$_i_|$\omega$|
 |:----|:---:|:---------:|:------:|
@@ -604,7 +604,7 @@ InfDIC.weights %>% mutate(model = c("I01","I02","I03","I04","I05","I06","I07","I
 
 Which we can summarise more neatly:
 
-Table 5.4: **Informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta is the difference in DIC scores, omega is DIC weighting.**
+Table 5.4: **Informative _a priori_ models ranked by Deviance Information Criterion (DIC) score. Delta _i_ is the difference in DIC scores, omega is DIC weighting.**
 
 |Model|DIC  |$\Delta$_i_|$\omega$|
 |:----|:---:|:---------:|:------:|
@@ -883,7 +883,7 @@ ggarrange(Ibeta1, Ibeta2, Ibeta3,
 
 Figure \@ref(fig:ch5-I9-betas) indicates that for model I09 the intercept, slope for pH and male standard length all differ from zero and are statistically important. The distributions of the informative priors are based on data from a Europe-wide study of three-spined stickleback morphology (priors summarised in Table 5.2). 
 
-#### Comparison with frequentist Gaussian GLM {#pois-freq-comp}
+#### Comparison with frequentist Poisson GLM {#pois-freq-comp}
 
 We can compare the results of the best-fitting Bayesian Poisson GLMs obtained with non-informative and informative priors (M09 and I09) with the same model fitted in a frequentist setting. Execution of the model in a frequentist framework can be performed with:
 
@@ -941,7 +941,7 @@ Given the approach we have used, there is no justification for undergoing furthe
 
 Poisson GLMs assume that the mean and variance of the response variable vary at the same rate. This assumption must be confirmed. Overdispersion means that a Poisson distribution does not adequately model the variance and is not appropriate for the analysis.
 
-We will implement the 7-step protocol of [@Zuur_2017] to assess dispersion in the Poisson GLM with informative priors:
+We will implement the 7-step protocol of @Zuur_2017 to assess dispersion in the Poisson GLM with informative priors:
 
 1. _Apply Poisson GLM in INLA_
 
@@ -965,7 +965,7 @@ Working just with the model with informative priors for brevity, we re-run the m
 
 ##### Simulate regression parameters from the posterior distribution
 
-Use the `inla.posterior.sample` function to simulate regression parameters with the output stored in the `SimData` object.
+We use the `inla.posterior.sample` function to simulate regression parameters with the output stored in the `SimData` object.
 
 `set.seed(1966)`
 
