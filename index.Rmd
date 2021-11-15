@@ -4,8 +4,8 @@ author: "Mark Warren & Carl Smith"
 date: November 2021
 output:
   pdf_document: 
-    toc: yes
-    toc_depth: 4
+    toc: true
+    toc_depth: 3
     df_print: kable
     number_sections: yes
     fig_width: 5
@@ -48,7 +48,7 @@ Our goal is to produce a set of accessible, inexpensive statistics guides for un
 
 To obtain the R script and data associated with each book chapter, type the following into your browser and download the data and script files: 
 
-https://www.dropbox.com/s/ofljovoiyp5u6ut/DataScript.zip
+https://www.dropbox.com/s/im3g5k9rat6sf02/DataScript.zip
 
 All profits from this book will be donated to the SAS Regimental Association.
 

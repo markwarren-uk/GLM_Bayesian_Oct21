@@ -18,6 +18,7 @@ library(tidyverse)
 library(mgcv)
 library(lme4)
 library(car)
+library(plyr)
 library(devtools)
 library(ggpubr)
 library(qqplotr)
@@ -1276,7 +1277,7 @@ ggplot() +
 
 The results of this statistical analysis can be summarised as follows:
 
-_A  negative binomial GLM was fitted to data using Bayesian inference with INLA for the number of scleractinian coral species  from 32 sampling 100 m$^2$ sites in the Sulu Sea. In the best-fitting model, which included informative and weakly informative priors on fixed effects, there was a statistically important negative effect of water depth on number of coral species. There was also a statistically important effect of protected status, with fewer coral species in unprotected sites. Finally, there was an interaction between depth and protected status, with a steeper negative relationship between water depth and number of coral species at protected sites (Table 6.2), Fig. \@ref(fig:ch6-final-plot). The model was fitted using informative and weakly informative priors on the fixed effects, obtained from a separate study of coral biodiversity from the same biogeographic region @Waheed_2015._
+_A  negative binomial GLM was fitted to data using Bayesian inference with INLA for the number of scleractinian coral species  from 32 sampling 100 m$^2$ sites in the Sulu Sea. In the best-fitting model, which included informative and weakly informative priors on fixed effects, there was a statistically important negative effect of water depth on number of coral species. There was also a statistically important effect of protected status, with fewer coral species in unprotected sites. Finally, there was an interaction between depth and protected status, with a steeper negative relationship between water depth and number of coral species at protected sites (Table 6.2), Fig. \@ref(fig:ch6-final-plot). The model was fitted using informative and weakly informative priors on the fixed effects, obtained from a separate study of coral biodiversity from the same biogeographic region._
 
 ## Conclusions
 

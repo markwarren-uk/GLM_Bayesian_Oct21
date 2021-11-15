@@ -13,3 +13,4 @@ bookdown::preview_chapter("10-bayes-coda.Rmd", "bookdown::pdf_book")
 
 # Print book to PDF
 bookdown::render_book("index.Rmd", "bookdown::pdf_book")
+
