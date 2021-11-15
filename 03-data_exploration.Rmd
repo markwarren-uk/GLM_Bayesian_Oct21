@@ -276,7 +276,7 @@ Visual inspection of the data using plots is a valuable step and will illustrate
 
 Below is R script to conduct a multi-panel scatterplot:
 
-`cyan %>% ggplot(aes(x = height, y = depth)) + geom_point() + geom_smooth(method = 'lm', colour = 'red', se = FALSE) + theme(panel.background = element_blank()) + theme(panel. border = element_rect(fill = NA, size = 1)) + theme(strip. background = element_rect(fill = "white", color = "white", size = 1)) + theme(text = element_text(size=16)) + facet_wrap(~zone)`
+`cyan %>% ggplot(aes(x = height, y = depth)) + geom_point() + geom_smooth(method = 'lm', colour = 'red', se = FALSE) + theme(panel.background = element_blank()) + theme(panel. border = element_rect(fill = NA, size = 1)) + theme(strip. background = element_rect(fill = "white", color = "white", size = 1)) + facet_wrap(~zone)`
 
 (ref:multipanel-cyan) **Multipanel scatterplot of blue tit nest depth and nest box height across woodland zones with a line of best fit plotted.**
 

@@ -615,7 +615,7 @@ geom_line(data = PosteriorHyp.M0,
 geom_line(data = PriorHyp.M0,
                    aes(y = y, x = x), color = "gray55", lwd = 1.2) +
 ylab("Density") +
-xlab(expression(paste("Tau (", tau ,")"))) +
+xlab(expression(paste("Tau"))) +
 xlim(0,0.009) + ylim(0,550) +
 geom_vline(xintercept = 0, linetype = "dotted") +
 geom_vline(xintercept = Hypmean.M0, linetype = "dashed") +
@@ -660,7 +660,7 @@ geom_line(data = SigmaM0,
 geom_line(data = PriorVar.M0,
                    aes(y = y, x = x), color = "gray55", lwd = 1.2) +
 ylab("Density") +
-xlab(expression(paste("SD (", sigma ,")"))) +
+xlab(expression(paste("Sigma"))) +
 xlim(10,25) + ylim(0,0.31) +
 geom_vline(xintercept = 0, linetype = "dotted") +
 geom_vline(xintercept = Hypvmean.M0, linetype = "dashed") +
@@ -868,7 +868,7 @@ geom_line(data = PosteriorHyp.M1,
 geom_line(data = PriorHyp.M1,
                    aes(y = y, x = x), color = "gray55", lwd = 1.2) +
 ylab("Density") +
-xlab(expression(paste("Tau (", tau ,")"))) +
+xlab(expression(paste("Tau"))) +
 xlim(0,0.009) + ylim(0,510) +
 geom_vline(xintercept = 0, linetype = "dotted") +
 geom_vline(xintercept = Hypmean.M1, linetype = "dashed") +
@@ -915,7 +915,7 @@ geom_line(data = SigmaM1,
 geom_line(data = PriorVar.M1,
                    aes(y = y, x = x), color = "gray55", lwd = 1.2) +
 ylab("Density") +
-xlab(expression(paste("SD (", sigma ,")"))) +
+xlab(expression(paste("Sigma"))) +
 xlim(10,20) + ylim(0,0.33) +
 geom_vline(xintercept = 0, linetype = "dotted") +
 geom_vline(xintercept = Hypvmean.M1, linetype = "dashed") +
@@ -1558,7 +1558,7 @@ geom_line(data = Sigma.M1.minus20,
                    aes(y = y, x = x), lwd = 0.8, 
                    linetype = "dotted", colour = "gray44")+
 ylab("Density")+
-xlab(expression(paste(sigma)))+
+xlab("Sigma")+
 theme(text = element_text(size=13)) +
 theme(panel.background = element_blank())+
 theme(panel.border = element_rect(fill = NA, 
