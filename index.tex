@@ -1,0 +1,798 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{book}
+\usepackage{amsmath,amssymb}
+\usepackage{lmodern}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  pdftitle={Bayesian GLMs in R for Ecology},
+  pdfauthor={Carl Smith \& Mark Warren},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+\urlstyle{same} % disable monospaced font for URLs
+\usepackage[a5paper, margin=20mm, portrait]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{5}
+\ifluatex
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{3em}
+\newenvironment{CSLReferences}[2] % #1 hanging-ident, #2 entry spacing
+ {% don't indent paragraphs
+  \setlength{\parindent}{0pt}
+  % turn on hanging indent if param 1 is 1
+  \ifodd #1 \everypar{\setlength{\hangindent}{\cslhangindent}}\ignorespaces\fi
+  % set entry spacing
+  \ifnum #2 > 0
+  \setlength{\parskip}{#2\baselineskip}
+  \fi
+ }%
+ {}
+\usepackage{calc}
+\newcommand{\CSLBlock}[1]{#1\hfill\break}
+\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{#1}}
+\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{#1}\break}
+\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+
+\title{Bayesian GLMs in R for Ecology}
+\author{Carl Smith \& Mark Warren}
+\date{2021-09-21}
+
+\begin{document}
+\frontmatter
+\maketitle
+
+{
+\setcounter{tocdepth}{1}
+\tableofcontents
+}
+\mainmatter
+\hypertarget{section}{%
+\chapter*{}\label{section}}
+\addcontentsline{toc}{chapter}{}
+
+\begin{quote}
+``\emph{The truth is not for all men, but only for those who seek it.}''
+
+Ayn Rand
+\end{quote}
+
+\hypertarget{preface}{%
+\chapter*{Preface}\label{preface}}
+\addcontentsline{toc}{chapter}{Preface}
+
+Our goal is to produce a set of accessible, inexpensive statistics
+guides for undergraduate and post-graduate students that are tailored to
+specific fields and that use R. These books present minimal statistical
+theory and are intended to allow students to understand the process of
+data exploration and model fitting and validation using datasets
+comparable to their own and, thereby, encourage the development of
+statistical skills. At the end of the book we provide a list of more
+comprehensive texts for those that wish to continue their development as
+statisticians.
+
+To obtain the R script associated with each book chapter, type the
+following into your browser and download the files:
+
+xxxxx
+
+All profits from this book will be donated to the Special Air Service
+Regimental Association \href{https://www.marsandminerva.co.uk}{link}.
+
+\hypertarget{contributors}{%
+\chapter*{Contributors}\label{contributors}}
+\addcontentsline{toc}{chapter}{Contributors}
+
+\textbf{Carl Smith} Department of Ecology \& Vertebrate Zoology,
+University of Łódź, 12/16 Banacha Street, 90-237 Łódź. Poland
+
+and
+
+Institute of Vertebrate Biology, Academy of Sciences of the Czech
+Republic, Květná 8, 603 65 Brno. Czech Republic
+
+email:
+\href{mailto:carl.smith@biol.uni.lodz.pl}{\nolinkurl{carl.smith@biol.uni.lodz.pl}}
+
+\textbf{Mark Warren} Data and Information, Environment Agency,
+Tewkesbury GL20 8JG. UK
+
+email:
+\href{mailto:mark.warren@environment-agency.gov.uk}{\nolinkurl{mark.warren@environment-agency.gov.uk}}
+
+\hypertarget{cover-art}{%
+\chapter*{Cover art}\label{cover-art}}
+\addcontentsline{toc}{chapter}{Cover art}
+
+The cover art is the work of Laura Andrew
+\href{www.lauraandrew.com}{link}. Laura is located in central Lincoln,
+UK. After studying and working as an illustrator in London, Laura
+returned to her roots in Lincolnshire where she produces her art, and
+offers courses and workshops to people looking to learn new skills such
+as watercolour, oil painting and printmaking. Much of her art is
+inspired by the natural world, particularly birds. Working
+professionally as both an artist and illustrator Laura sells her art
+worldwide and her paintings have been exhibited in galleries locally and
+in London.
+
+\hypertarget{intro1}{%
+\chapter{Introduction to R and RStudio}\label{intro1}}
+
+In this chapter we will introduce R, which is a programming language for
+data analysis and graphics, and RStudio, which is an integrated
+development environment (IDE) that allows you to interact more easily
+with R. We highly recommend using RStudio as your console for R. As you
+become familiar with it you will learn more of its functionality within
+your data analyses and research.
+
+The advent of the statistical software package R has contributed
+substantially to an improvement in the quality and sophistication of
+data analyses performed in a range of scientific fields, including
+ecology. While not intuitive to use, R has become the industry standard,
+and time invested in learning to master R will be rewarded with an
+improved understanding of how to handle and model data. There are
+several benefits to using R. First, it is extremely flexible and permits
+analysis of almost any type of data. Second, there are extremely
+efficient packages that permit the import of various data types, joining
+and transforming data and visualising data. R readily permits the
+sharing of code with collaborators or journal reviewers and can be
+archived with corresponding datasets for others to use and improve upon.
+Finally, R is freely distributed under General Public License for all
+major computing platforms (Windows, MacOS and Linux), and under
+continuous development by a large community of scientists.
+
+To install the R software on your computer go to:
+\url{https://www.r-project.org} and follow the instructions for
+downloading the latest version.
+
+To install RStudio go to \url{https://rstudio.com} and download `RStudio
+Desktop.'
+
+You will need to install the R software before installing RStudio.
+
+Once both are installed always start any R session by opening RStudio (R
+will be opened automatically).
+
+\hypertarget{start}{%
+\section{Getting started with R and RStudio}\label{start}}
+
+\hypertarget{basic}{%
+\subsection{Basic points}\label{basic}}
+
+\begin{itemize}
+\tightlist
+\item
+  R is command-line driven.
+\item
+  It requires you to type commands after a command prompt (\textgreater)
+  that appears when you open R. After typing a command in the R console
+  and pressing `Enter' on your keyboard, the command will run. If your
+  command is not complete, R issues a continuation prompt (`+').
+\item
+  You can also write \emph{script} in the script window, and select a
+  \emph{command}, and click the Run button. This R script can be saved.
+\item
+  Finally, you can also import R script - either saved by you
+  previously, or written by someone else.
+\item
+  R is case sensitive. Take care with spelling and capitalization.
+\item
+  Commands in R are called `functions' (see Section @ref(functions)).
+\item
+  The up arrow (\^{}) on your keyboard can be used to bring up previous
+  commands that you have typed in the R console.
+\item
+  The dollar symbol \texttt{\$} is used to select a particular column
+  within your data (called a `dataframe') (e.g.~``df\$var1'').
+\item
+  You can include text in your script that R will not execute by
+  including the `hash tag' \# symbol. R ignores the remainder of the
+  script line following \#. Using \# enables you to insert comments and
+  instructions in your script, or to make modifications to your analysis
+  by `hashing out' lines of script.
+\end{itemize}
+
+\hypertarget{Rstudio}{%
+\subsection{Navigating RStudio}\label{Rstudio}}
+
+The RStudio interface comprises four windows, which by default are
+organised as follows:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  Bottom Left: \emph{Console/Terminal/Jobs} window and for now we just
+  focus on the \emph{Console} tab. Here you can directly enter commands
+  after the ``\textgreater{}'' prompt. This is where you will see R
+  execute your commands and where results will appear. However you
+  cannot save anything written here. Instead, it is more efficient to
+  write your commands on the \emph{Source} window (see below) and leave
+  this window for results.
+\item
+  Top Left: \emph{Source} window. Here you can write commands (organised
+  as script) that can be edited and saved. If no script has been
+  selected the window will appear as ``Untitled.'' It is in the Source
+  window that you will do all your work - writing and editing script,
+  and pasting in script from other sources. The contents of the entire
+  window can be selected (CTRL+A) and then executed using the ``Run''
+  command at the top right of the window. Alternatively, you can run
+  script one line at a time by placing the cursor anywhere on a line of
+  interest and clicking RUN. You can also run a line of script from the
+  keyboard using CTRL+ENTER. When a line of script is run in the Source
+  window you will see that it is sent to the \emph{Console} window to be
+  executed.
+\end{enumerate}
+
+If you cannot see this window just open it with:
+
+\emph{File→NewFile→RScript}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{2}
+\item
+  Top right: \emph{Environment/History} window. If you select
+  Environment you can see the data and values R has in its memory. If
+  you select History you can see a history of what has been executed in
+  the \emph{Console} window.
+\item
+  Bottom right: \emph{Files/Plots/Packages/Help/Viewer} window. Here you
+  can open, delete, rename files, create folders, view current and
+  previous plots, install and load packages or access help.
+\end{enumerate}
+
+\hypertarget{RS-settings}{%
+\subsection{Basic settings in RStudio}\label{RS-settings}}
+
+The following are our recommendations about how to initially set up
+RStudio.
+
+To access the setting menu (once you have opened RStudio):
+
+Tools→Global Options
+
+Select the `General' tab and deselect the `Restore .RData into workspace
+at startup,' and set `Save workspace to .RData on exit' to `Never.'
+
+This procedure ensures that the content of any previous R session is not
+stored or reloaded between R sessions, which guarantees that the R
+session is `clean' to begin with and does not have unexpected objects or
+settings that might interfere with the new code you will input.
+
+Next, within `Global Options' select `Code.' We suggest you go to the
+`Execution' section and change the drop-down menu after `Ctrl+Enter
+executes:' to `Current line'; as a beginner we recommend that you run
+and read R script line-by-line to better understand it.
+
+Finally, still within `Global Options,' select `Appearance.' Here you
+can change font style, font size and the editor theme to whatever you
+find most pleasing to the eye under different working conditions and
+your personal preference. For example, the `Editor theme' of `Vibrant
+Ink' works well if your computer screen is in sunlight, whereas `Xcode'
+works well under low light conditions.
+
+\hypertarget{Principles}{%
+\subsection{Basic principles in R}\label{Principles}}
+
+In Section @ref(basic) we mentioned the term \emph{command}, which is an
+instruction given to R and stored/written in a Script, which can be
+saved as a file to be shared with others. Commands can be simple
+mathematical operations; i.e.~1 + 1, or can be a complex set of
+instructions that will execute a full analysis of your data. In the
+latter case, R users like us are not expected to work out the different
+steps to carry out the analyses (e.g.~a t-test), instead we call/request
+a function, which can be thought of as a data analysis method.
+Conceptually this is no different to using other software and pressing a
+menu button to run a function, except in R you run it via code.
+Functions are designed by advanced R users, often called developers, and
+one day you will probably write your own functions to help speed up your
+analyses, which is another reason why R is so useful. We will routinely
+use functions in future sessions, so this concept will become clearer
+(see Section @ref(functions)). Some developers compile sets of functions
+into packages that are designed for particular types of data (i.e.~data
+that contain lots of zeros) or analyses (i.e.~for analysing evolutionary
+trees). See Section @ref(functions) for a fuller explanation of
+functions and packages.
+
+One of the great attractions about learning R for data analysis is that
+thousands of developers are continually working to develop new functions
+and packages. Remarkably, they do this work entirely for free. Producers
+of commercial statistics packages, such as SPSS and Minitab, employ
+their own developers, but fewer than voluntarily contribute to R. The
+outcome is that more cutting-edge statistical methods are available to R
+users than those reliant on commercially produced statistical software.
+
+\textbf{Objects}\\
+R is referred to as an object-based programming language. Statistical
+analyses are based around creating and manipulating objects. Creating
+objects is straightforward, thus with the script:
+
+\texttt{a\ \textless{}-\ 1}
+
+We create an object `a' with the value of 1. The symbol `\textless-` is
+termed the assignment operator, and it assigns whatever is on its
+right-hand side to whatever is on its left-hand side. It is a type of
+function (see Section @ref(functions)). The assignment operator keyboard
+shortcut is ALT + - (Windows) or Option + - (Mac). Remember this and use
+it to save typing and time!
+
+We can examine the value of object a by typing its name in the
+Editor/Script window and clicking RUN (or CTRL+ENTER on the keyboard):
+
+\texttt{a}
+
+Which will return in the Console window:
+
+1
+
+Objects can be manipulated, thus:
+
+\texttt{a\ +\ 1}
+
+Which returns:
+
+2
+
+Unfortunately, this exciting result has now been lost (to recreate it we
+would need to type a + 1 again). Statisticians pride themselves on being
+efficient (lazy), so to reliably recreate the same outcome we can make
+another object:
+
+\texttt{b\ \textless{}-\ a\ +\ 1}
+
+We have created an object `b' with the value a + 1. We can recall the
+value of object b by typing its name in the Editor/Script window (and
+CTRL+ENTER):
+
+\texttt{b}
+
+Which will return in the Console window:
+
+2
+
+Objects can contain anything: values (as above), vectors, matrices,
+dataframes, lists, graphs, tables, even R script.
+
+The most common data objects in R are vectors and dataframes. A vector
+is a single column in a spreadsheet and will often be classed as either
+numeric, character or logical.
+
+Consider two vectors representing the abundance of five fish species
+captured in a stretch of the River Pilica in Poland:
+
+species
+
+frequency
+
+pike
+
+40
+
+roach
+
+99
+
+chub
+
+31
+
+perch
+
+35
+
+asp
+
+0
+
+\textbf{species} is a character vector and \textbf{frequency} is a
+numeric vector.
+
+It is easy to input a vector object in R, just write the following in
+the Editor/Script window and run (CTRL+ENTER):
+
+\texttt{freq\ \textless{}-\ c(40,99,31,35,0)}
+
+We have created a vector object `freq.' The `c()' expression is referred
+to as the `concatenate' function, combining all the elements in the
+parentheses into a vector. Confirm the object contains the correct
+values by typing:
+
+\texttt{freq}
+
+Which will return in the Console window:
+
+40, 99, 31, 35, 0
+
+To check the class of vector type:
+
+\texttt{class(freq)}
+
+Which returns:
+
+numeric
+
+We can similarly create an object vector to represent categories:
+
+\texttt{species\ \textless{}-\ c("pike",\ "roach",\ "chub",\ "perch",\ "asp")}
+
+Confirm the object contains the values by typing:
+
+\texttt{species}
+
+Which will return in the Console window:
+
+pike, roach, chub, perch, asp
+
+Another type of object is a dataframe, what you might consider as a
+`table' of information. You can create dataframes by combining vectors.
+So:
+
+\texttt{spec\_freq\ \textless{}-\ data.frame(species,freq)}
+
+Confirm the object contains the values by typing:
+
+\texttt{spec\_freq}
+
+Again, use the \texttt{class()} function to see what type of object
+\texttt{spec\_freq} is.
+
+Dataframes are the fundamental objects used within our statistical
+analyses. In reality, we usually do not create dataframes by typing data
+directly into R when we want to analyse them. Instead, we import them
+directly from their source. But first, we need to set up where we will
+not only access our data but also our code, outputs and other
+documentation associated with particular analyses.
+
+\textbf{A note on tibbles}
+
+Although we have mentioned dataframes, there also exist special types of
+dataframe called \emph{tibbles}. Tibbles are dataframes but they have
+been tweaked to overcome older R behaviours and make life a little
+easier. For now simply view tibble as an alias for dataframe and for
+brevity we will use the term \emph{dataframe} throughout to cover both.
+There is a tibble package, part of the tidyverse set of packages, which
+we use in this book. A good starting point to become familiar with
+tidyverse packages and tidy coding style is the book
+\href{https://r4ds.had.co.nz/}{R for Data Science} by Hadley Wickham and
+Garrett Grolemund.
+
+\hypertarget{RS-projects}{%
+\subsection{Working with RStudio projects}\label{RS-projects}}
+
+When we started using R in 2011, the insightful developers at RStudio
+had only just released a beta version of the IDE. Version 1.0 was
+released in 2016 and since then the IDE and the `ecosystem' of packages
+and add-ins has grown enormously to allow anyone to use R in a more
+organised way. Here we want to highlight what we believe is fundamental
+to an efficient workflow with the IDE; \emph{projects}.
+
+RStudio projects make it straightforward to divide and manage your work
+into multiple contexts, each with their own working directory,
+workspace, history, and source documents. Projects are associated with
+particular working directories that you set up, basically a folder
+somewhere on your computer or network where you store your data. Once a
+project is set up and associated with a folder (working directory) your
+data, R code and outputs from R will be stored there. Projects set up a
+neat and easy to use mini environment for your work and using them will
+put you on the path to being a good reproducible statistician or data
+scientist.
+
+\hypertarget{create-proj}{%
+\subsubsection{Creating projects}\label{create-proj}}
+
+RStudio projects are associated with R working directories. You can
+create an RStudio project:
+
+\emph{File→New Project}
+
+You then have the following options:
+
+\begin{itemize}
+\tightlist
+\item
+  In a brand new directory
+\item
+  In an existing directory where you already have R code and data
+\item
+  By cloning a version control (Git or Subversion) repository (this is
+  beyond the scope of this book but will feature in our forthcoming book
+  \emph{Reproducible Research in R}).
+\end{itemize}
+
+When a new project is created RStudio:
+
+\begin{itemize}
+\tightlist
+\item
+  Creates a project file (with an .Rproj extension) within the project
+  directory. This file can be used as a shortcut for opening the project
+  directly from the filesystem.
+\item
+  Creates a hidden directory (named .Rproj.user) where project-specific
+  temporary files (e.g.~auto-saved source documents, window-state, etc.)
+  are stored.
+\item
+  Loads the project into RStudio and display its name in the Projects
+  toolbar (which is located on the far right side of the main toolbar)
+\end{itemize}
+
+\hypertarget{openproj}{%
+\subsubsection{Opening and closing projects}\label{openproj}}
+
+There are several ways to open a project but the most common are:
+
+\begin{itemize}
+\tightlist
+\item
+  Using the Open Project command (available from both the Projects menu
+  and the Projects toolbar) to browse for and select an existing project
+  file (e.g.~MyProject.Rproj).
+\item
+  Selecting a project from the list of most recently opened projects
+  (also available from both the Projects menu and toolbar).
+\end{itemize}
+
+When a project is opened within RStudio the following actions are taken:
+
+\begin{itemize}
+\tightlist
+\item
+  A new R session (process) is started
+\item
+  The .Rprofile file in the project's main directory is sourced by R
+\item
+  The .Rhistory file in the project's main directory is loaded into the
+  RStudio History pane (and used for Console Up/Down arrow command
+  history).
+\item
+  Previously edited source documents are restored into editor tabs
+\item
+  Other RStudio settings (e.g.~active tabs, splitter positions, etc.)
+  are restored to where they were the last time the project was closed.
+\end{itemize}
+
+When you are within a project and choose to either Quit, close the
+project, or open another project the following actions are taken:
+
+\begin{itemize}
+\tightlist
+\item
+  .RData and/or .Rhistory are written to the project directory (if
+  current options indicate they should be)
+\item
+  The list of open source documents is saved (so it can be restored next
+  time the project is opened)
+\item
+  Your RStudio settings are saved.
+\item
+  The R session is terminated.
+\end{itemize}
+
+\hypertarget{multiproj}{%
+\subsubsection{Working with multiple projects}\label{multiproj}}
+
+You can work with more than one RStudio project at a time by simply
+opening each project in its own instance of RStudio. The simplest way to
+accomplish this is:
+
+\emph{File→Open Project in New Session}
+
+You can then navigate to the working directory (or folder) where the
+project is saved. Then select the project file (.Rproj) and select open
+in the dialogue box. A new RStudio and R session will be available in a
+new window. This is helpful when you are starting an analysis that is
+similar to one you did a while back, having the older project open means
+you can copy/paste similar code into new project scripts.
+
+\hypertarget{import}{%
+\subsection{Importing data}\label{import}}
+
+Once you have created a project associated with a directory that
+contains data you can import this into R from a variety of formats, such
+as .csv, .txt, .xls, etc. For simplicity, we will work with
+tab-delimited files (.txt) and comma-separated files (.csv).
+
+We will start by importing a set of data on Eurasian blue tit
+(\emph{Cyanistes caeruleus}) nesting success from Wytham Woods, UK (1°
+20′ W, 51° 47′ N). Wytham Woods is a tract of ancient woodland in
+Oxfordshire that has been managed by the University of Oxford since
+1942. It is believed to be the most intensively researched area of
+woodland in the world and has been used for pioneering ecological
+research for decades.
+
+Blue tits are abundant in Wytham Woods and readily use artificial nest
+boxes. These data (note that `data' is a plural word - the singular of
+`data' is `datum') are a subset of 438 records collected during the
+breeding seasons of 2001--2003 in Wytham Woods. The aim of data
+collection was to investigate which variables predicted variation in
+size of nests. An analysis of the full dataset has been published
+(\protect\hyperlink{ref-O_Neill_2018}{ONeill, Parker, and Griffith
+2018}).
+
+Data for blue tit nests are saved in the tab-delimited file `cyan.txt'
+and can be imported into a dataframe in R using the command:
+
+\texttt{cyan\ \textless{}-\ read.table(file\ =\ "cyanistes.txt",\ header\ =\ TRUE,\ dec\ =\ ".")}
+
+After importing the dataframe, select Environment in the
+\emph{Environment / History} window (top right) and you will see an
+entry for `cyan' showing that R has the data in its memory.
+
+\hypertarget{functions}{%
+\subsection{Functions and packages}\label{functions}}
+
+Commands performed on values, vectors, objects, and other structures in
+R are executed using \emph{functions}. A function is a type of object.
+
+Every function has the form \texttt{function.name()} with arguments
+given inside the brackets. Functions require you to give at least one
+argument.
+
+Many functions in R come in \emph{packages} although you can create your
+own as we will see in later chapters. Packages are folders containing
+all the script that is needed to run particular functions. When you
+first install R it comes with a set of default packages (base R) and
+whenever you open R or RStudio, some of these are loaded to ensure you
+have basic functionality. However, as you develop your statistical and
+R-coding skills, you will need to load specific packages to do
+particular jobs.
+
+As an example, we can use the function \texttt{describe()} from the
+package psych to report basic summary statistics for the variable
+\texttt{depth} in the \texttt{cyan} dataframe. The package psych is not
+part of base R, which means to use the function \texttt{describe()} we
+must first install the package psych:
+
+\texttt{install.packages("psych")}
+
+R will go online, download the package from the package repository and
+install it to the R library on your computer. Note that to install
+packages the package name is wrapped in quotes (``package'')
+
+When a package is installed it is necessary to then \emph{load} it from
+the library so that R can access its functions, which is done using the
+\texttt{library()} command:
+
+\texttt{library(psych)}
+
+Note that loading a package does not require the quotes around the name
+that install.packages() needed. You only need to \emph{install} a
+package once. However, after you close R you will have to \emph{load}
+any packages that you need again. It is good practice to load all the
+packages you will need for your data processing, visualisation, and
+analysis at the beginning of your script. You will see examples of this
+when we provide you with script for analysis.
+
+Now that the package psych is installed and loaded, we can use the
+function describe to summarise the variable \texttt{depth} in the
+\texttt{cyan} dataframe. The variable \texttt{depth} is an estimate of
+the fraction of each nest box that was filled by a blue tit nest. Note
+that \texttt{\$} symbol is used to select the column \texttt{depth} in
+the \texttt{cyan} dataframe.
+
+\texttt{describe(cyan\$depth,\ skew\ =\ FALSE)}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{knitr}\SpecialCharTok{::}\FunctionTok{kable}\NormalTok{(}
+  \FunctionTok{round}\NormalTok{(}\FunctionTok{describe}\NormalTok{(cyan}\SpecialCharTok{$}\NormalTok{depth, }\AttributeTok{skew =} \ConstantTok{FALSE}\NormalTok{),}\DecValTok{2}\NormalTok{), }\AttributeTok{caption =} \StringTok{\textquotesingle{}Summary statistics for nest depth\textquotesingle{}}\NormalTok{,}
+  \AttributeTok{booktabs =} \ConstantTok{TRUE}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{table}
+
+\caption{\label{tab:nice-tab}Summary statistics for nest depth}
+\centering
+\begin{tabular}[t]{lrrrrrrrr}
+\toprule
+  & vars & n & mean & sd & min & max & range & se\\
+\midrule
+X1 & 1 & 438 & 0.33 & 0.1 & 0.17 & 0.75 & 0.58 & 0\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\hypertarget{refs}{}
+\begin{CSLReferences}{1}{0}
+\leavevmode\hypertarget{ref-O_Neill_2018}{}%
+ONeill, Louis G., Timothy H. Parker, and Simon C. Griffith. 2018.
+{``Nest Size Is Predicted by Female Identity and the Local Environment
+in the Blue Tit ( Cyanistes Caeruleus ), but Is Not Related to the Nest
+Size of the Genetic or Foster Mother.''} \emph{Royal Society Open
+Science} 5 (4): 172036. \url{https://doi.org/10.1098/rsos.172036}.
+
+\end{CSLReferences}
+
+\backmatter
+\end{document}

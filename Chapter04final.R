@@ -16,11 +16,11 @@ library(mgcv)
 library(lme4)
 library(car)
 library(devtools)
+library(plyr)
 library(ggpubr)
 library(qqplotr)
 library(gridExtra) 
 library(rlang)
-library(plyr)
 
 # Install the latest stable version of INLA:
 #install.packages("INLA", repos=c(getOption("repos"), 

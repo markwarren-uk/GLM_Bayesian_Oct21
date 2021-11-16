@@ -18,6 +18,7 @@ library(tidyverse)
 library(mgcv)
 library(lme4)
 library(car)
+library(plyr)
 library(devtools)
 library(ggpubr)
 library(qqplotr)
@@ -48,7 +49,7 @@ The dataframe comprises `r nrow(coral)` observations of `r ncol(coral)` variable
 
 ## Steps in fitting a Bayesian GLM {#nb-glm-steps}
 
-We will following the 9 steps to fitting a Bayesian GLM, detailed in Chapter \@ref(fit-steps).
+We will following the 9 steps to fitting a Bayesian GLM, detailed in Section \@ref(fit-steps).
 
 _1. State the question_
 
@@ -70,7 +71,7 @@ _9. Visualise the results_
 
 ### State the question {#coral-question}
 
-This study was conducted to ascertain the benefit of implementing a marine protected area on coral diversity. The variable `species` is the response variable and conservation status (`status`) is a covariate. Because there is a well recognised negative relationship of water depth on coral species abundance (i.e. coral diversity is greater in shallow water), water depth (`depth`) is an additional covariate. Further, the effect of reef protected status may vary with water depth, particularly in the case of the impact of tourists who tend to cause most damage to corals in shallow water. Consequently, the interaction of `status` and `depth` on coral diversity (`species`) will also be included in a model.
+This study was conducted to ascertain the benefit of implementing a marine protected area on coral diversity. The variable `species` is the response variable and conservation status (`status`) is a categorical covariate. Because there is a well recognised negative relationship of water depth on coral species abundance (i.e. coral diversity is greater in shallow water), water depth (`depth`) is an additional continuous covariate. Further, the effect of reef protected status may vary with water depth, particularly in the case of the impact of tourists who tend to cause most damage to corals in shallow water. Consequently, the interaction of `status` and `depth` on coral diversity (`species`) will also be included in a model.
 
 ### Data exploration {#coral-eda}
 
@@ -215,7 +216,7 @@ coral %>% ggplot() +
   theme(legend.position = "none")
 ```
 
-The plots in Fig. \@ref(fig:ch6-scatter) suggest a negative relationship between the number of coral species and water depth, with this relationship stronger for protected than unprotected reefs, which implies a status x depth interaction.
+The plots in Fig. \@ref(fig:ch6-scatter) suggest a negative relationship between the number of coral species and water depth, with this relationship stronger for protected than unprotected reefs, which implies a protected status x depth interaction.
 
 #### Independence of response variable {#nb-indep}
 
@@ -319,7 +320,7 @@ This reports the posterior mean, standard deviation and 95% credible intervals f
 
 For the slope of the variable depth we have a posterior mean of -0.10 and lower 95% credible interval of -0.12 and upper 95% credible interval of -0.07; we are 95% certain that the posterior mean of the regression parameter for the slope of depth falls between these credible intervals, which means depth is statistically important in the model.
 
-We can similarly conclude that the effect of the protection status of a reef has an important effect on coral species biodiversity, and is lower for unprotected reefs. There is also an important effect of a depth x status interaction in the data.
+We can similarly conclude that the effect of the protected status of a reef has an important effect on coral species biodiversity, and is lower for unprotected reefs. There is also an important effect of a depth x status interaction in the data.
 
 The posterior distribution of the fixed effects can be visualised using `ggplot2.` The coding for this plot is available in the R script associated with this chapter.
 
@@ -652,7 +653,7 @@ Table 6.1: **Comparison of model parameters for frequentist, Bayesian model with
 |Bayesian (informative)|4.89(0.08)|-0.10(0.01)|-0.73(0.13)|-0.06(0.02)|
 
 
-Parameter estimates for the frequentist and Bayesian model with non-informative priors are identical, while results for the Bayesian model with informative priors are only slightly different.
+Parameter estimates for the frequentist and Bayesian model with non-informative priors are identical, while results for the Bayesian model with informative priors differ only slightly.
 
 ### Conduct model checks
 
@@ -984,7 +985,7 @@ rownames(DIC3) <- c("Poisson","negative binomial")
 round(DIC3,0)
 ```
 
-The negative binomial model gives an improved fit to the data.
+The negative binomial model clearly gives an improved fit to the data in comparison with a Poisson GLM.
 
 #### Posterior predictive checks {#nbglm-ppc}
 
@@ -1276,7 +1277,7 @@ ggplot() +
 
 The results of this statistical analysis can be summarised as follows:
 
-_A  negative binomial GLM was fitted to data using Bayesian inference with INLA for the number of scleractinian coral species  from 32 sampling 100 m$^2$ sites in the Sulu Sea. In the best-fitting model, which included informative and weakly informative priors on fixed effects, there was a statistically important negative effect of water depth on number of coral species. There was also a statistically important effect of protected status, with fewer coral species in unprotected sites. Finally, there was an interaction between depth and protected status, with a steeper negative relationship between water depth and number of coral species at protected sites (Table 6.2), Fig. \@ref(fig:ch6-final-plot). The model was fitted using informative and weakly informative priors on the fixed effects, obtained from a separate study of coral biodiversity from the same biogeographic region @Waheed_2015._
+_A  negative binomial GLM was fitted to data using Bayesian inference with INLA for the number of scleractinian coral species  from 32 sampling 100 m$^2$ sites in the Sulu Sea. In the best-fitting model, which included informative and weakly informative priors on fixed effects, there was a statistically important negative effect of water depth on number of coral species. There was also a statistically important effect of protected status, with fewer coral species in unprotected sites. Finally, there was an interaction between depth and protected status, with a steeper negative relationship between water depth and number of coral species at protected sites (Table 6.2), Fig. \@ref(fig:ch6-final-plot). The model was fitted using informative and weakly informative priors on the fixed effects, obtained from a separate study of coral biodiversity from the same biogeographic region._
 
 ## Conclusions
 

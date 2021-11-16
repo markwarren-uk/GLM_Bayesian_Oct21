@@ -20,6 +20,7 @@ library(tidyverse)
 library(mgcv)
 library(lme4)
 library(car)
+library(plyr)
 library(devtools)
 library(ggpubr)
 library(qqplotr)
@@ -192,7 +193,7 @@ We first create an object comprising the variables of interest, then plot:
 
 `seal %>% ggpairs(columns = c("fSex", "age", "lean_mass"), ggplot2::aes(colour=fSex, alpha = 0.8))`
 
-(ref:ch8-ggpairs) **Plot matrix of common seal dive duration (sec.) split by sex. showing frequency plots, boxplots, frequency histograms, and frequency polygons.**
+(ref:ch8-ggpairs) **Plot matrix of common seal dive duration (sec.) split by sex, showing frequency plots, boxplots, frequency histograms, and frequency polygons.**
 
 ```{r ch8-ggpairs, fig.cap='(ref:ch8-ggpairs)', fig.align='center', fig.dim=c(6, 4), cache = TRUE, message = FALSE, echo=FALSE, warning=FALSE}
 
@@ -540,7 +541,7 @@ round(I01Betas, digits = 3)
 
 Like the default model, the model intercept and variables `lean_mass` and `fSexFemale` have lower and upper 95% credible intervals that do not include zero. In contrast, the slope for the effect of seal age does not differ from zero.
 
-(ref:ch8-I01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian gamma GLM to model maximum dive duration of common seals. The model is fitted with informative priors. Distributions for: A. model intercept; B. slope for lean mass; C. slope for age; D. slope for sex. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
+(ref:ch8-I01-betas) **Posterior and prior distributions for fixed parameters of a Bayesian gamma GLM to model maximum dive duration of common seals. The model is fitted with weakly informative priors. Distributions for: A. model intercept; B. slope for lean mass; C. slope for age; D. slope for sex. The solid black line is the posterior distribution, the solid gray line is the prior distribution, the gray shaded area encompasses the 95% credible intervals, the vertical dashed line is the posterior mean of the parameter, the vertical dotted line indicates zero. For parameters where zero (indicated by dotted line) falls outside the range of the 95% credible intervals (gray shaded area), the parameter is statistically important.**
 
 ```{r ch8-I01-betas, fig.cap='(ref:ch8-I01-betas)', fig.align='center', fig.dim=c(6, 4), cache = TRUE,  message = FALSE, echo=FALSE, warning=FALSE}
 

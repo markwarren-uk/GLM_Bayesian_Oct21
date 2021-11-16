@@ -4,7 +4,7 @@ A Bernoulli distribution is a discrete distribution for dealing with data with o
 
 ## Common cuckoo parasitism of great reed warbler nests {#bern-cc}
 
-The common cuckoo (_Cuculus canorus_) is an avian brood parasite, laying its eggs in the nests of its host species which subsequently rear the parasitic cuckoo chick to independence. The common cuckoo exploits a range of hosts, with each individual female cuckoo a host specialist, exploiting a single or small group of host species. An important host is the great reed warbler (_Acrocephalus arundinaceus_), which nests in reedbeds associated with waterbodies across lowland Europe. Because brood parasitism imposes a severe fitness cost on hosts, hosts have evolved defensive adaptations, including cryptic nesting behaviour as well as aggression towards cuckoos; reed warblers are capable of killing cuckoos that attempt to lay in their nests [@_ulc_2020].
+The common cuckoo (_Cuculus canorus_) is an avian brood parasite, laying its eggs in the nests of its host species, which subsequently rear the parasitic cuckoo chick to independence. The common cuckoo exploits a range of hosts, with each individual female cuckoo a host specialist, exploiting a single or small group of host species. An important host is the great reed warbler (_Acrocephalus arundinaceus_), which nests in reedbeds associated with waterbodies across lowland Europe. Because brood parasitism imposes a severe fitness cost on hosts, hosts have evolved defensive adaptations, including cryptic nesting behaviour as well as aggression towards cuckoos; reed warblers are capable of killing cuckoos that attempt to lay in their nests [@_ulc_2020].
 
 Here we fit a Bernoulli GLM to data on the occurrence of cuckoo parasitism in reed warbler nests in reedbeds associated with a marshland area in the South Moravian region of the Czech Republic. Data were collected for 18 nests during a single breeding season. Each nest was monitored over the entire breeding season, with a record made of whether or not the nest suffered cuckoo brood parasitism. Data were also collected for each nest on the distance to the nearest tree, which serve as vantage points for female cuckoos to observe the location of reed warbler nests. An additional habitat variable measured was the distance of each nest to open water, which provides a measure of how inaccessible a nest was in a given reedbed. Finally, the aggressive response of each pair of reed warblers to a dummy cuckoo placed 1 m from their nest was measured, with the response scored as either a low-level aggressive response (no reaction or distress calling) or high-level aggression (mobbing and attacking).
 
@@ -20,6 +20,7 @@ library(tidyverse)
 library(mgcv)
 library(lme4)
 library(car)
+library(plyr)
 library(devtools)
 library(ggpubr)
 library(qqplotr)
@@ -51,7 +52,7 @@ The dataframe comprises `r nrow(cc)` observations of `r ncol(cc)` variables. Eac
 
 ## Steps in fitting a Bayesian GLM {#bern-glm-steps}
 
-We will following the 9 steps to fitting a Bayesian GLM, detailed in Chapter \@ref(fit-steps).
+We will following the 9 steps to fitting a Bayesian GLM, detailed in Section \@ref(fit-steps).
 
 _1. State the question_
 
@@ -257,7 +258,7 @@ Informative priors for the model  were based on data from a pilot study conducte
 
 A small-scale trial in which just 7 great reed warbler nests were monitored for cuckoo parasitism was conducted in the year preceding the main trial. All reed warblers in the pilot and main study were ringed and none used in the pilot were subsequently monitored in the main study.
 
-Table 7.1: **Pilot data to investigate predictors of cuckoo parasitism of great reed warbler nests. The association between the distance of nests to open water, the nearest tree, and reed warbler aggressive response to a dummy cuckoo were measured. The incidence of cuckoo brood parasitism of great reed warbler nests was monitored throughout the breeding season (mid-May to mid-July)..**
+Table 7.1: **Pilot data to investigate predictors of cuckoo parasitism of great reed warbler nests. The association between the distance of nests to open water, the nearest tree, and reed warbler aggressive response to a dummy cuckoo were measured. The incidence of cuckoo brood parasitism of great reed warbler nests was monitored throughout the breeding season (mid-May to mid-July).**
 
 |Nest|Open water (m)|Tree (m)|Pair aggression|Cuckoo egg|
 |:--:|:------------:|:------:|:-------------:|:--------:|
@@ -1043,6 +1044,8 @@ round(Betas.minus20, digits = 2)
 
 ```
 
+These results can be more formally presented in a table:
+
 Table 7.3: **Sensitivity analysis for a 20% increase and decrease in informative priors on fixed effects and the % change in the posterior mean.**
 
 |Parameter|% prior|Mean  |0.025CI|0.975CI|% posterior|
@@ -1077,7 +1080,7 @@ _logit_ $\pi_i$ = $\eta_{i}$
 
 $\eta_i$ = $\beta_1$ + $\beta_2$ x $tree_{i}$ + $\beta_3$ x $aggression_{i}$ 
 
-Where $Egg_{i}$ is the probability of $nest_{i}$ being parasitised with a cuckoo egg, which is assumed to follow a binomial distribution with an expected probability (_E_) of parasitism of mean $n_i$ x $\pi_{i}$ and variance $n_i$ x $\pi_{i}$ x $(1 - \pi_{i})$, with a logit link function. The logit function ensures the fitted probability of brood parasitism falls between 0 and 1. The model contains a linear effect for distance of nest _i_ to the nearest tree ($tree_{i}$), while $aggression_{i}$  is a categorical covariate with two levels, corresponding with the aggressive response of parental great reed warblers to a cuckoo model, either low or high aggressive response.
+Where $Egg_{i}$ is the probability of nest _i_ being parasitised with a cuckoo egg, which is assumed to follow a binomial distribution with an expected probability (_E_) of parasitism of mean $n_i$ x $\pi_{i}$ and variance $n_i$ x $\pi_{i}$ x $(1 - \pi_{i})$, with a logit link function. The logit function ensures the fitted probability of brood parasitism falls between 0 and 1. The model contains a linear effect for distance of nest _i_ to the nearest tree ($tree_{i}$), while $aggression_{i}$  is a categorical covariate with two levels, corresponding with the aggressive response of parental great reed warblers to a cuckoo model, either low or high aggressive response.
 
 The numerical output of the model is:
 

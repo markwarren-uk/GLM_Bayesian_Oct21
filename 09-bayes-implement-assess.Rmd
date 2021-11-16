@@ -24,9 +24,9 @@ Previously collected data from comparable studies can provide estimates of model
 
 In some cases related studies provide no relevant information, or incorporate biases that render information unusable, for example through lack of experimental quality, scientific rigour, or because the setting of previous studies was not focused on the parameter(s) of interest in our own study.
 
-In other cases, studies may be judged sufficiently similar that data are exchangeable. Exchangeability means that the posterior distribution from one set of data can be reliably used as the prior distribution that is updated by the second data set. Pilot data, or subsets of data from a main study, can often unambiguously be considered as exchangeable and used to generate priors with confidence.
+In other cases, studies may be judged sufficiently similar that data are exchangeable. **Exchangeability** means that the posterior distribution from one set of data can be reliably used as the prior distribution that is updated by the second data set. Pilot data, or subsets of data from a main study, can often unambiguously be considered as exchangeable and used to generate priors with confidence.
 
-However, in cases where data come from a broadly similar study design, the extent to which we place reliance on priors derived from it may need to be moderated in translating to our own study. Considerations include characteristics of the population on which the study has been conducted, the experimental procedures used, and the data analysis employed in the study; see @Miocevic_2020 for a fuller discussion. 
+However, in cases where data come from a broadly similar study design, the extent to which we place reliance on priors may need to be moderated in translating to our own study. Considerations include characteristics of the population on which the study has been conducted, the experimental procedures used, and the data analysis employed in the study; see @Miocevic_2020 for a fuller discussion. 
 
 ### Logical considerations
 
@@ -48,7 +48,7 @@ A final point regarding expert opinion is that if model results are to be broadl
 
 ### Pilot data
 
-Pilot data would typically be expected to have the advantage of exchangeability, though whether this is the case will depend on the nature of the pilot data and its origin. A pilot study may comprise a preliminary component of a larger study, or represent a discrete piece of work that precedes a fuller study, examples are the studies we present in Chapter 4 and 7. Irrespective of its origin, pilot data which would otherwise be discarded can usefully serve to generate prior distributions for a main study.
+Pilot data would typically be expected to have the advantage of exchangeability, though whether this is the case will depend on the nature of the pilot data and their origin. A pilot study may comprise a preliminary component of a larger study, or represent a discrete piece of work that precedes a fuller study, examples are the studies we present in Chapter 4 and 7. Irrespective of their origin, pilot data which would otherwise be discarded can usefully serve to generate prior distributions for a main study.
 
 ## Presenting the results of a Bayesian GLM
 
@@ -56,7 +56,7 @@ After fitting a GLM, what is appropriate to include in a paper to report model r
 
 It is first important to recognise that the results of a Bayesian model are not summarised with parameter point estimates and instead comprise posterior distributions, which captures the uncertainty of the true parameter value. This can be summarised in a table with mean, sd and credible intervals, but also with a plot of the posterior distribution, like those shown in Chapters 4-8.
 
-A full explanation of the impact of priors used in a model is also needed, including what priors were used and a justification that includes how the priors were obtained (previous research, logical considerations, expert knowledge, pilot data) and why each prior is specified as it is in the model. A justification is needed even in the case of non-informative priors. A plot of the prior distribution along with the posterior can also be informative.
+A full explanation of the impact of priors used in a model is also needed, including what priors were used and a justification that includes how the priors were obtained (previous research, logical considerations, expert knowledge, pilot data) and why each prior is specified as it is in the model. A justification is needed even in the case of non-informative priors. A plot of the prior distribution along with the posterior can also be helpful
 
 In the case that weakly informative or informative priors are used, a comparison of model results with non-informative priors is needed to illustrate their impact. The results of a sensitivity analysis of priors is also indispensable as a means of illustrating the impact of the priors.
 
